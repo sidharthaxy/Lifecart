@@ -38,7 +38,13 @@ export async function paypal<T = Record<string, unknown>>(tool: string, args: Re
   if (!parsed.success) throw new PayPalError(`Invalid arguments for ${tool}`, 400, parsed.error?.issues);
   await record("paypal", { calls: 1 });
   const out = await withTimeout(t.execute(parsed.data, { toolCallId: `lifecart-${tool}`, messages: [] }), timeoutMs, `PayPal ${tool}`);
-  const data = typeof out === "string" ? safeJson(out) : out;
+  let data = typeof out === "string" ? safeJson(out) : out;
+  // Some toolkit tools wrap PayPal's JSON as { status: "success" | "error", response: {...} }.
+  const wrapped = data as { status?: unknown; response?: unknown };
+  if (wrapped && typeof wrapped === "object" && "response" in wrapped && (wrapped.status === "success" || wrapped.status === "error")) {
+    if (wrapped.status === "error") throw new PayPalError(`PayPal ${tool} failed`, undefined, wrapped.response);
+    data = wrapped.response;
+  }
   const err = data as { ok?: boolean; status?: number; message?: string; error?: unknown; name?: string; details?: unknown };
   if (err && (err.ok === false || (typeof err.name === "string" && /ERROR|INVALID|UNPROCESSABLE/.test(err.name)))) {
     throw new PayPalError(err.message ?? `PayPal ${tool} failed`, err.status, data);
@@ -161,7 +167,7 @@ export async function createAndSendInvoice(input: { provider: string; email: str
   });
   const id = draft.id ?? draft.href?.split("/").pop() ?? linkOf(draft, "self")?.split("/").pop();
   if (!id) throw new PayPalError("PayPal did not return an invoice id", undefined, draft);
-  await paypal("send_invoice", { invoice_id: id, send_to_recipient: true });
+  const sent = await paypal<{ href?: string; rel?: string }>("send_invoice", { invoice_id: id, send_to_recipient: true });
   const inv = await paypal<{ status?: string; detail?: { metadata?: { recipient_view_url?: string } } }>("get_invoice", { invoice_id: id }).catch(() => null);
-  return { id, status: inv?.status ?? "SENT", url: inv?.detail?.metadata?.recipient_view_url };
+  return { id, status: inv?.status ?? "SENT", url: inv?.detail?.metadata?.recipient_view_url ?? (sent?.rel === "payer-view" ? sent.href : undefined) };
 }
