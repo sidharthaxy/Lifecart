@@ -136,6 +136,12 @@ Design tokens: ground `#F6F7F9`, surface `#FFFFFF`, ink `#0E1726`, muted `#4A546
 8. **Price watch**: watched items, target vs current, history
 9. **Orders and tracking**: timeline, subscriptions management
 10. Mobile layouts for the approval page and bills (the WhatsApp link opens on phones)
+11. **Money dashboard (AG Grid)**, added Nov 7 at the user's request.
+    - Lifetime totals: spent, saved with coupons, saved by price watch, saved by bill insights.
+    - Spend by rail (Orders / Subscriptions / Invoices / Bills) and by plan (e.g. "Golden retriever").
+    - An AG Grid table of every payment: date, merchant, plan, rail, amount, coupon, saved, PayPal ID, status. It supports sort, filter, quick search and CSV export.
+    - Data comes from our `payments` table, reconciled with PayPal's Transaction Search (`list_transactions` in the Agent Toolkit). That's another real PayPal API in use. Note that sandbox transaction search can lag by a few hours.
+    - Use **AG Grid Community** (free, no key). Row grouping, pivoting and integrated charts are Enterprise-only, so totals and charts are built with our own components.
 
 ## 8. Timeline (today is Nov 4 → deadline Nov 12)
 
@@ -172,6 +178,18 @@ Design tokens: ground `#F6F7F9`, surface `#FFFFFF`, ink `#0E1726`, muted `#4A546
 - **Market**: US, USD. The persona is a US renter. Bills: rent, electricity, internet, prepaid phone top-up.
 - **WhatsApp**: ~~Meta WhatsApp Cloud API~~. On Nov 7, Meta blocked developer sign-up (unused Facebook account, "new device" check), so we switched to the **Twilio WhatsApp sandbox**. The message carries a tappable "Review & Pay" link instead of a native button. The demo user sends the sandbox `join` code once, and again if the session expires (~3 days). Meta support stays in the code behind `WHATSAPP_PROVIDER=meta`.
 - **Visual direction**: calm fintech. Light and airy, one confident deep-blue accent (not PayPal's brand blue), soft cards.
+
+## 11b. Sponsor tools: decision (Nov 7)
+
+| Sponsor | Use? | Why |
+|---|---|---|
+| **Channel3** | ✅ core | Product search, offers, 90-day price history ($1.5k prize; must be called, not just mentioned) |
+| **Kernel** | ✅ core | Cloud browser that tests coupon codes ($50 credit) |
+| **AG Grid** | ✅ core | Budget grid + money dashboard; Community edition, no key ($5k / $2k / 3×$1k) |
+| **Render** | ✅ deploy | Hosting + Postgres (credits prize) |
+| Bryntum | maybe | Bills due-date calendar; only if time remains (3×$1k), and it's a commercial trial component |
+| Postman | maybe | Publish a collection of our API routes; low effort, no listed prize |
+| APIMatic, Elastic, Zapier, Astropods | ❌ | No natural fit; would be bolted on |
 
 ## 12. Accounts and keys to get
 
