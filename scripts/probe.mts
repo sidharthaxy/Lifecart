@@ -5,7 +5,7 @@ const [url, width = "390"] = process.argv.slice(2);
 const browser = await puppeteer.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true });
 const page = await browser.newPage();
 const errors: string[] = [];
-page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+page.on("pageerror", (e) => errors.push("pageerror: " + (e as Error).message));
 page.on("console", (m) => m.type() === "error" && errors.push("console: " + m.text().slice(0, 200)));
 await page.setViewport({ width: Number(width), height: 900 });
 await page.goto(url, { waitUntil: "networkidle0" });
