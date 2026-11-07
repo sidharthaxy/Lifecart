@@ -96,6 +96,28 @@ The provider sits behind one `lib/ai.ts` file chosen by `AI_PROVIDER`, so we can
 
 **Coupons**: Kernel browser visits the merchant page and checkout-adjacent coupon sources. Haiku extracts codes and terms. We show "verified / unverified" and never claim a code works unless the merchant page confirmed it.
 
+## 4b. Agent design: bounded, budget-aware (Nov 7)
+
+The planner is a **fixed pipeline, not an open-ended loop**, so it can't spin forever:
+
+| Step | Calls |
+|---|---|
+| 0. Clarifying questions (0-3, tap-to-answer; skipped for specific requests) | 1 Groq |
+| 1. Photo description (cached on the goal) | ≤1 Groq vision |
+| 2. Draft plan from situation + answers (1-3 items for specific asks, 9-12 for life changes) | 1 Groq |
+| 3. Search offers per product | N Channel3 |
+| 4. Match offers (same-kind check + price sanity band 0.33x-3x), then one broader retry search for unmatched | 1-2 Groq, ≤N Channel3 |
+| 5. 90-day price history for chosen offers | ≤N Channel3 |
+
+Safeguards:
+- **Timeouts** on every external call (Groq 25-45s via AbortSignal, Channel3 12-18s) and a **3-minute run deadline**.
+- **Single-flight:** a plan is claimed atomically (`draft -> running`). A second request follows the first with keep-alive pings instead of re-running.
+- **Crash recovery:** a `running` plan older than the deadline is reclaimed.
+- **Browser:** gives up after 2 minutes of silence and shows "Try again". No auto-retry loops.
+- **Budget caps** (`src/lib/usage.ts`, shown on `/setup`): Groq 800 req/day (the real limit is 1,000 per model, and Groq's own remaining count from its response headers is respected); Channel3 2,500 credits/day; Kernel 60 sessions/day; Twilio 100 messages/day.
+- **Rate limit:** a per-minute token gate reads Groq's `x-ratelimit-*` headers and waits (max 25s) instead of hitting 429s.
+- **Degrades instead of failing:** over the Channel3 cap, items get price estimates. Over the Groq cap, planning pauses with a clear message.
+
 ## 5. Tech stack
 
 - **Next.js 15 (App Router) + TypeScript + Tailwind + shadcn/ui**

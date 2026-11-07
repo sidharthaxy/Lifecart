@@ -1,38 +1,59 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt, or } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { aiConfigured } from "@/lib/ai";
 import { isIndependent, priceHistory, searchProducts, type C3Offer } from "@/lib/channel3";
 import { env } from "@/lib/env";
+import { BudgetError, canSpend, TimeoutError } from "@/lib/usage";
 import { chooseOffers, describePhoto, draftPlan } from "./planner";
 import { fallbackPlan } from "./fallback";
 import type { PlanDraft } from "./schemas";
 
 export type StepEvent =
   | { type: "step"; text: string; source?: string }
+  | { type: "ping" }
   | { type: "done" }
   | { type: "error"; message: string };
+
+/** Hard ceiling for one agent run. Each external call also has its own timeout (see lib/usage, lib/ai). */
+export const RUN_DEADLINE_MS = 180_000;
 
 type Emit = (e: StepEvent) => void;
 
 /**
- * The LifeCart planning agent:
- *  1. (photo) describe it with the vision model
- *  2. draft a need-based plan from the user's situation (Groq gpt-oss-120b)
- *  3. search real offers for every product (Channel3)
- *  4. pick the genuinely matching offer per item (Groq gpt-oss-20b)
- *  5. pull 90-day price history for chosen offers (Channel3)
+ * The LifeCart planning agent. A fixed, bounded pipeline (no open-ended loops):
+ *  0. (before this) up to 3 clarifying questions, see clarify.ts
+ *  1. (photo) describe it with the vision model (cached from the questions step)
+ *  2. draft a need-based plan from the situation + answers         1 Groq call
+ *  3. search real offers for every product                          N Channel3 searches
+ *  4. pick the genuinely matching offer per item                    1 Groq call
+ *     + one broader retry search for unmatched items              ≤N searches, ≤1 Groq call
+ *  5. pull 90-day price history for chosen offers                   ≤N Channel3 calls
  *  6. save everything; checkout split follows from each item's payType
+ * Worst case: 3 Groq calls and ~3N Channel3 credits. Every call has a timeout, the whole run has
+ * RUN_DEADLINE_MS, and a run that crashed is reclaimed after the deadline.
  */
 export async function runPlan(goalId: string, emit: Emit) {
   const db = await getDb();
 
-  // Claim the goal so a double request (e.g. React dev double-effect) doesn't run the agent twice.
+  // Claim the goal so a double request doesn't run the agent twice. A "running" goal whose run started
+  // longer ago than the deadline is a crashed run (server restart etc.) and may be reclaimed.
+  const stale = new Date(Date.now() - RUN_DEADLINE_MS - 30_000);
   const [goal] = await db
     .update(schema.goals)
-    .set({ status: "running", error: null })
-    .where(and(eq(schema.goals.id, goalId), eq(schema.goals.status, "draft")))
+    .set({ status: "running", error: null, runStartedAt: new Date() })
+    .where(
+      and(
+        eq(schema.goals.id, goalId),
+        or(eq(schema.goals.status, "draft"), and(eq(schema.goals.status, "running"), lt(schema.goals.runStartedAt, stale))),
+      ),
+    )
     .returning();
   if (!goal) return waitForOtherRun(goalId, emit);
+
+  const startedAt = Date.now();
+  const checkDeadline = () => {
+    if (Date.now() - startedAt > RUN_DEADLINE_MS) throw new TimeoutError("Planning run exceeded its deadline");
+  };
 
   const steps: { text: string; source?: string }[] = [];
   const step = (text: string, source?: string) => {
@@ -41,24 +62,32 @@ export async function runPlan(goalId: string, emit: Emit) {
   };
 
   try {
-    // 1. Photo
-    let imageNote: string | null = null;
-    if (goal.imageUrl && aiConfigured()) {
-      imageNote = await describePhoto(goal.imageUrl).catch(() => null);
-      if (imageNote) step(`Looked at your photo: ${imageNote}`);
-    }
+    // A plan needs up to 3 AI calls; refuse up front rather than fail halfway.
+    if (aiConfigured() && !(await canSpend("groq", { calls: 3 }))) throw new BudgetError("groq");
+
+    // 1. Photo (usually already described during the questions step)
+    let imageNote: string | null = goal.imageNote;
+    if (goal.imageUrl && !imageNote && aiConfigured()) imageNote = await describePhoto(goal.imageUrl).catch(() => null);
+    if (imageNote) step(`Looked at your photo: ${imageNote}`);
+
+    // Follow-up answers
+    const qa = (goal.questions ?? [])
+      .map((q) => ({ question: q.question, answer: goal.answers?.[q.id] ?? "" }))
+      .filter((x) => x.answer);
+    if (qa.length) step(`Used your answers: ${qa.map((x) => x.answer).join("; ")}.`);
 
     // 2. Draft
     let plan: PlanDraft;
     if (aiConfigured()) {
-      plan = await draftPlan({ prompt: goal.prompt, budget: goal.budgetCap ? Number(goal.budgetCap) : null, imageNote });
+      plan = await draftPlan({ prompt: goal.prompt, budget: goal.budgetCap ? Number(goal.budgetCap) : null, imageNote, qa });
     } else {
       plan = fallbackPlan;
       step("AI key not set, so using the sample golden retriever plan.");
     }
     const flat = plan.groups.flatMap((g, gi) => g.items.map((it) => ({ ...normalize(it), group: g.title, groupWhy: g.why, gi })));
     step(`Read your situation: ${plan.context.join(", ")}.`);
-    step(`Drafted ${flat.length} items across ${plan.groups.length} needs.`);
+    step(`Drafted ${flat.length} ${flat.length === 1 ? "item" : "items"} across ${plan.groups.length} ${plan.groups.length === 1 ? "need" : "needs"}.`);
+    checkDeadline();
 
     // 3. Search offers
     const productIdx = flat.map((it, i) => (it.kind === "product" && it.searchQuery ? i : -1)).filter((i) => i >= 0);
@@ -73,10 +102,12 @@ export async function runPlan(goalId: string, emit: Emit) {
       step("Product search key not set, so prices are estimates.");
     }
 
-    // 4. Choose offers
+    checkDeadline();
+    // 4. Choose offers (then one broader retry search for anything unmatched)
     const chosen = new Map<number, number | null>();
-    const withOffers = productIdx.filter((i) => (offersByItem.get(i)?.length ?? 0) > 0);
-    if (withOffers.length && aiConfigured()) {
+    const match = async (idx: number[]) => {
+      const withOffers = idx.filter((i) => (offersByItem.get(i)?.length ?? 0) > 0);
+      if (!withOffers.length || !aiConfigured()) return;
       const picks = await chooseOffers(
         withOffers.map((i) => ({
           name: flat[i].name,
@@ -85,11 +116,34 @@ export async function runPlan(goalId: string, emit: Emit) {
           offers: offersByItem.get(i)!,
         })),
       ).catch(() => new Map<number, number | null>());
-      withOffers.forEach((i, k) => chosen.set(i, picks.has(k) ? picks.get(k)! : 0));
-      const matched = [...chosen.values()].filter((v) => v != null).length;
-      step(`Matched ${matched} of ${withOffers.length} products to the right listing.`);
+      withOffers.forEach((i, k) => {
+        const pick = picks.has(k) ? picks.get(k)! : null;
+        const offer = pick == null ? null : offersByItem.get(i)![pick];
+        // Sanity check: a price far from the typical one usually means the wrong product (or an accessory).
+        const est = flat[i].estimatedPrice;
+        const plausible = offer && est > 0 && offer.price >= est * 0.33 && offer.price <= est * 3;
+        chosen.set(i, plausible ? pick : null);
+      });
+    };
+    await match(productIdx);
+
+    const unmatched = productIdx.filter((i) => chosen.get(i) == null);
+    if (unmatched.length && env.channel3ApiKey) {
+      // Plain item name, minus parenthetical specs, is often a broader query that finds the product.
+      const retry = await Promise.all(
+        unmatched.map((i) => searchProducts(flat[i].name.replace(/\(.*?\)/g, "").trim(), 4).catch(() => [])),
+      );
+      unmatched.forEach((i, k) => offersByItem.set(i, retry[k]));
+      await match(unmatched);
+    }
+    if (productIdx.length && aiConfigured()) {
+      const matched = productIdx.filter((i) => chosen.get(i) != null).length;
+      step(
+        `Matched ${matched} of ${productIdx.length} products to the right listing${unmatched.length ? ` (searched again for ${unmatched.length})` : ""}.`,
+      );
     }
 
+    checkDeadline();
     // 5. Price history for chosen offers
     const histories = new Map<number, Awaited<ReturnType<typeof priceHistory>>>();
     const toHistory = [...chosen.entries()].filter(([, v]) => v != null) as [number, number][];
@@ -207,19 +261,25 @@ function normalize<T extends { kind: string; payType: string; cadence: string; p
   return x;
 }
 
+/** Another request is already running this plan: follow it (bounded) instead of starting a second run. */
 async function waitForOtherRun(goalId: string, emit: Emit) {
   const db = await getDb();
-  for (let i = 0; i < 90; i++) {
+  const until = Date.now() + RUN_DEADLINE_MS + 15_000;
+  let n = 0;
+  while (Date.now() < until) {
     const [g] = await db.select().from(schema.goals).where(eq(schema.goals.id, goalId));
     if (!g) return emit({ type: "error", message: "Plan not found." });
     if (g.status === "ready") return emit({ type: "done" });
-    if (g.status === "draft" && g.error) return emit({ type: "error", message: friendlyError(g.error) });
-    await new Promise((r) => setTimeout(r, 1500));
+    if (g.status === "draft") return emit({ type: "error", message: g.error ? friendlyError(g.error) : "Planning stopped. Please try again." });
+    if (++n % 5 === 0) emit({ type: "ping" }); // keep the browser's silence timer happy
+    await new Promise((r) => setTimeout(r, 2000));
   }
   emit({ type: "error", message: "The planner is taking too long. Please try again." });
 }
 
 function friendlyError(m: string) {
+  if (/budget reached/i.test(m)) return "Today's free AI and search allowance is nearly used up, so planning is paused to protect the demo. It resets at midnight UTC.";
   if (/rate limit|429|tokens per/i.test(m)) return "The free AI tier is busy for a moment. Wait about a minute and try again.";
+  if (/timed out|deadline|aborted|timeout/i.test(m)) return "A service took too long to answer. Please try again.";
   return "Something went wrong while planning. Please try again.";
 }

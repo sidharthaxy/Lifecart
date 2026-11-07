@@ -33,20 +33,33 @@ export const planSchema = z.object({
       z.object({
         title: z.string().describe("Need-based group, e.g. 'While you're away', 'Essentials', 'Health', 'Services'"),
         why: z.string().describe("Few words on why this group exists for this user"),
-        items: z.array(plannedItem).min(1),
+        items: z.array(plannedItem).min(1).max(8),
       }),
     )
-    .min(3)
+    .min(1)
     .max(5),
 });
 export type PlanDraft = z.infer<typeof planSchema>;
 export type PlannedItem = z.infer<typeof plannedItem>;
+
+export const clarifySchema = z.object({
+  questions: z
+    .array(
+      z.object({
+        question: z.string().describe("Short, friendly question, max ~12 words"),
+        why: z.string().describe("Few words on how the answer changes the plan, e.g. 'decides crate size and walker visits'"),
+        options: z.array(z.string()).min(2).max(5).describe("2-5 short tap-to-answer options, most common first"),
+      }),
+    )
+    .max(3),
+});
 
 export const choiceSchema = z.object({
   choices: z.array(
     z.object({
       item: z.number().int().describe("Item index as given"),
       offer: z.number().int().nullable().describe("Index of the best matching offer, or null if none really matches"),
+      sameKind: z.boolean().describe("true only if the chosen offer is the same kind of product as the item (not an accessory or a different product)"),
     }),
   ),
 });

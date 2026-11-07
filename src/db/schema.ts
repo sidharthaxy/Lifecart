@@ -1,10 +1,12 @@
-import { boolean, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const payType = pgEnum("pay_type", ["order", "subscription", "invoice", "watch"]);
 export const priority = pgEnum("priority", ["now", "can_wait"]);
 export const billType = pgEnum("bill_type", ["rent", "electricity", "water", "internet", "phone", "subscription", "other"]);
 export const approvalKind = pgEnum("approval_kind", ["cart", "bill", "watch", "renewal"]);
 export const approvalStatus = pgEnum("approval_status", ["pending", "sent", "approved", "paid", "declined", "expired"]);
+
+export type ClarifyQuestion = { id: string; question: string; why?: string; options: string[] };
 
 const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -25,6 +27,8 @@ export const goals = pgTable("goals", {
   userId: uuid("user_id").notNull().references(() => users.id),
   prompt: text("prompt").notNull(),
   imageUrl: text("image_url"),
+  /** Vision model's description of the photo, cached so it runs once. */
+  imageNote: text("image_note"),
   budgetCap: money("budget_cap"),
   title: text("title"),
   summary: text("summary"),
@@ -32,9 +36,15 @@ export const goals = pgTable("goals", {
   context: jsonb("context").$type<string[]>(),
   /** Error message if the agent run failed. */
   error: text("error"),
+  /** Clarifying questions the agent asked before planning (null = not asked yet, [] = none needed). */
+  questions: jsonb("questions").$type<ClarifyQuestion[]>(),
+  /** The user's answers, keyed by question id (null = not answered yet). */
+  answers: jsonb("answers").$type<Record<string, string>>(),
   /** Agent's step log shown in "What the agent did". */
   steps: jsonb("steps").$type<{ text: string; source?: string }[]>(),
   status: text("status").notNull().default("draft"),
+  /** When the current agent run started; a "running" goal older than the run deadline is treated as crashed. */
+  runStartedAt: timestamp("run_started_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
 
@@ -147,3 +157,18 @@ export const payments = pgTable("payments", {
   tracking: jsonb("tracking").$type<{ carrier?: string; number?: string; status?: string }>(),
   createdAt: createdAt(),
 });
+
+/** Daily API usage per provider, so we can show it and stop before free-tier limits run out. */
+export const apiUsage = pgTable(
+  "api_usage",
+  {
+    day: text("day").notNull(), // YYYY-MM-DD (UTC)
+    provider: text("provider").notNull(), // groq | channel3 | kernel | twilio | paypal
+    calls: integer("calls").notNull().default(0),
+    units: integer("units").notNull().default(0), // tokens for groq, credits for channel3, seconds for kernel
+    /** Latest provider-reported limits, e.g. Groq's x-ratelimit-remaining-* headers. */
+    meta: jsonb("meta").$type<Record<string, string | number>>(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.provider] })],
+);

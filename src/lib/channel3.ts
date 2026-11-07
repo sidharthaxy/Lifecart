@@ -1,5 +1,8 @@
 import { Channel3 } from "@channel3/sdk";
 import { env } from "./env";
+import { canSpend, record, withTimeout } from "./usage";
+
+const REQ = { timeoutInSeconds: 15, maxRetries: 1 };
 
 /**
  * Thin wrapper over the official Channel3 SDK.
@@ -38,12 +41,15 @@ type RawOffer = {
 };
 type RawProduct = { id: string; title?: string; images?: { url?: string }[]; offers?: RawOffer[] };
 
+/** Search US offers. Returns [] (never throws) when over today's credit cap, so plans degrade to estimates. */
 export async function searchProducts(query: string, limit = 5): Promise<C3Offer[]> {
-  const res = (await c3().products.search({
-    query,
-    limit,
-    config: { country: "US", currency: "USD" },
-  } as never)) as unknown as { response?: { products?: RawProduct[] } };
+  if (!(await canSpend("channel3", { units: 1 }))) return [];
+  await record("channel3", { units: 1 });
+  const res = (await withTimeout(
+    c3().products.search({ query, limit, config: { country: "US", currency: "USD" } } as never, REQ as never),
+    18_000,
+    "Product search",
+  )) as unknown as { response?: { products?: RawProduct[] } };
 
   const out: C3Offer[] = [];
   for (const p of res.response?.products ?? []) {
@@ -75,8 +81,14 @@ export type PriceHistory = {
 };
 
 export async function priceHistory(productId: string, days = 90): Promise<PriceHistory | null> {
+  if (!(await canSpend("channel3", { units: 1 }))) return null;
   try {
-    const h = (await c3().priceTracking.retrieveHistory({ canonical_product_id: productId, days })) as unknown as {
+    await record("channel3", { units: 1 });
+    const h = (await withTimeout(
+      c3().priceTracking.retrieveHistory({ canonical_product_id: productId, days }, REQ as never),
+      12_000,
+      "Price history",
+    )) as unknown as {
       history?: { timestamp: string; price: number }[];
       statistics?: { min_price?: number; max_price?: number; mean?: number; current_price?: number; current_status?: string } | null;
     };

@@ -17,7 +17,8 @@ async function PlanContent({ params, searchParams }: { params: Promise<{ id: str
   if (!plan) notFound();
   const { goal, items } = plan;
 
-  if (goal.status !== "ready") return <PlanRunner goalId={goal.id} prompt={goal.prompt} />;
+  if (goal.status !== "ready")
+    return <PlanRunner goalId={goal.id} prompt={goal.prompt} questions={goal.questions} answered={goal.answers != null} running={goal.status === "running"} />;
 
   return (
     <div className="flex flex-col gap-6">
