@@ -17,6 +17,17 @@ async function PlanContent({ params, searchParams }: { params: Promise<{ id: str
   if (!plan) notFound();
   const { goal, items } = plan;
 
+  if (goal.status === "blocked")
+    return (
+      <section role="alert" className="mx-auto flex w-full max-w-2xl flex-col gap-3 rounded-2xl border border-border bg-card p-6 sm:p-8">
+        <h1 className="text-2xl font-extrabold">We can&apos;t plan this one</h1>
+        <p className="text-muted-foreground">{goal.error}</p>
+        <Link href="/" className="self-start font-semibold">
+          Start a different plan
+        </Link>
+      </section>
+    );
+
   if (goal.status !== "ready")
     return <PlanRunner goalId={goal.id} prompt={goal.prompt} questions={goal.questions} answered={goal.answers != null} running={goal.status === "running"} />;
 

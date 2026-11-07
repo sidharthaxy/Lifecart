@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Loader2, MessageCircleQuestion, RotateCcw } from "lucide-react";
 import type { ClarifyQuestion } from "@/db/schema";
@@ -31,6 +32,9 @@ export function PlanRunner({
   const [other, setOther] = useState<Record<string, string>>({});
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const started = useRef<Phase | null>(null);
 
   const run = useCallback(async () => {
@@ -71,7 +75,13 @@ export function PlanRunner({
   const ask = useCallback(async () => {
     try {
       const res = await fetch(`/api/plans/${goalId}/questions`, { method: "POST" });
-      const { questions: qs } = (await res.json()) as { questions: ClarifyQuestion[] };
+      const body = (await res.json()) as { questions?: ClarifyQuestion[]; blocked?: string };
+      if (body.blocked) {
+        setError(body.blocked);
+        setBlocked(true);
+        return;
+      }
+      const qs = body.questions;
       if (qs?.length) {
         setQuestions(qs);
         setPhase("questions");
@@ -97,8 +107,23 @@ export function PlanRunner({
       const v = answers[q.id] === "__other" ? other[q.id] : answers[q.id];
       if (v?.trim()) merged[q.id] = v.trim();
     }
-    await fetch(`/api/plans/${goalId}/questions`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: merged }) });
-    setPhase("running");
+    setSaving(true);
+    setAnswerError(null);
+    try {
+      const res = await fetch(`/api/plans/${goalId}/questions`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ answers: merged }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setAnswerError(body.error ?? "Those answers couldn't be used. Try different wording.");
+        return;
+      }
+      setPhase("running");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (phase === "questions") {
@@ -153,11 +178,16 @@ export function PlanRunner({
           </fieldset>
         ))}
 
+        {answerError && (
+          <p role="alert" className="rounded-xl bg-warning-soft px-4 py-3 text-sm text-[#5C3800]">
+            {answerError}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3 border-t border-border pt-5">
           <button
             type="button"
             onClick={() => submit(false)}
-            disabled={answeredCount === 0}
+            disabled={answeredCount === 0 || saving}
             className="flex min-h-12 items-center gap-2 rounded-xl bg-primary px-6 font-semibold text-primary-foreground disabled:opacity-50"
           >
             Plan it <ArrowRight className="size-[18px]" aria-hidden />
@@ -200,9 +230,15 @@ export function PlanRunner({
       {error && (
         <div role="alert" className="flex flex-col gap-3 rounded-xl bg-warning-soft p-4 text-sm text-[#5C3800]">
           <span>{error}</span>
-          <button type="button" onClick={() => location.reload()} className="flex min-h-10 items-center gap-2 self-start rounded-lg border border-[#C98A1E] bg-card px-3 font-semibold">
-            <RotateCcw className="size-4" aria-hidden /> Try again
-          </button>
+          {blocked ? (
+            <Link href="/" className="self-start font-semibold">
+              Start a different plan
+            </Link>
+          ) : (
+            <button type="button" onClick={() => location.reload()} className="flex min-h-10 items-center gap-2 self-start rounded-lg border border-[#C98A1E] bg-card px-3 font-semibold">
+              <RotateCcw className="size-4" aria-hidden /> Try again
+            </button>
+          )}
         </div>
       )}
     </section>

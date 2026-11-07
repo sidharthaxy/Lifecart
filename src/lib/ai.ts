@@ -16,8 +16,10 @@ export const MODEL_IDS = {
   agent: "openai/gpt-oss-120b",
   /** Photo input: vision + tool use, up to 3 images per request (≤20 MB each). */
   vision: "qwen/qwen3.8-27b",
-  /** Cheap, high-volume jobs: coupon extraction, bill parsing, message copy. */
+  /** Cheap, high-volume jobs: guardrail policy checks, coupon extraction, bill parsing, message copy. */
   fast: "openai/gpt-oss-20b",
+  /** Llama Prompt Guard 2: returns a 0..1 prompt-injection/jailbreak probability. */
+  promptGuard: "meta-llama/llama-prompt-guard-2-86m",
 } as const;
 export type ModelKind = keyof typeof MODEL_IDS;
 
@@ -25,6 +27,7 @@ export const models = {
   agent: () => groq(MODEL_IDS.agent),
   vision: () => groq(MODEL_IDS.vision),
   fast: () => groq(MODEL_IDS.fast),
+  promptGuard: () => groq(MODEL_IDS.promptGuard),
 };
 
 export const aiConfigured = () => Boolean(env.groqApiKey);

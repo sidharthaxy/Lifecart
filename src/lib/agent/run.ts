@@ -4,6 +4,7 @@ import { aiConfigured } from "@/lib/ai";
 import { isIndependent, priceHistory, searchProducts, type C3Offer } from "@/lib/channel3";
 import { env } from "@/lib/env";
 import { BudgetError, canSpend, TimeoutError } from "@/lib/usage";
+import { isBlockedItem } from "@/lib/guard/check";
 import { chooseOffers, describePhoto, draftPlan } from "./planner";
 import { fallbackPlan } from "./fallback";
 import type { PlanDraft } from "./schemas";
@@ -84,7 +85,11 @@ export async function runPlan(goalId: string, emit: Emit) {
       plan = fallbackPlan;
       step("AI key not set, so using the sample golden retriever plan.");
     }
-    const flat = plan.groups.flatMap((g, gi) => g.items.map((it) => ({ ...normalize(it), group: g.title, groupWhy: g.why, gi })));
+    const drafted = plan.groups.flatMap((g, gi) => g.items.map((it) => ({ ...normalize(it), group: g.title, groupWhy: g.why, gi })));
+    // Guard layer 5: drop anything prohibited that slipped past the input checks.
+    const flat = drafted.filter((it) => !isBlockedItem(`${it.name} ${it.searchQuery} ${it.provider}`));
+    if (flat.length < drafted.length) step(`Removed ${drafted.length - flat.length} item(s) LifeCart can't help buy.`);
+    if (!flat.length) throw new Error("Nothing left to plan after safety checks");
     step(`Read your situation: ${plan.context.join(", ")}.`);
     step(`Drafted ${flat.length} ${flat.length === 1 ? "item" : "items"} across ${plan.groups.length} ${plan.groups.length === 1 ? "need" : "needs"}.`);
     checkDeadline();
@@ -270,6 +275,7 @@ async function waitForOtherRun(goalId: string, emit: Emit) {
     const [g] = await db.select().from(schema.goals).where(eq(schema.goals.id, goalId));
     if (!g) return emit({ type: "error", message: "Plan not found." });
     if (g.status === "ready") return emit({ type: "done" });
+    if (g.status === "blocked") return emit({ type: "error", message: g.error ?? "This request can't be planned." });
     if (g.status === "draft") return emit({ type: "error", message: g.error ? friendlyError(g.error) : "Planning stopped. Please try again." });
     if (++n % 5 === 0) emit({ type: "ping" }); // keep the browser's silence timer happy
     await new Promise((r) => setTimeout(r, 2000));
