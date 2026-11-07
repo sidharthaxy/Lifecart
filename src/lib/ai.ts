@@ -16,7 +16,7 @@ export const models = {
   /** Photo input: vision + tool use, up to 3 images per request (≤20 MB each). */
   vision: () => groq("qwen/qwen3.8-27b"),
   /** Cheap, high-volume jobs: coupon extraction, bill parsing, message copy. */
-  fast: () => groq("llama-3.1-8b-instant"),
+  fast: () => groq("openai/gpt-oss-20b"),
 };
 
 export const aiConfigured = () => Boolean(env.groqApiKey);

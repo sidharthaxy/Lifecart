@@ -88,11 +88,11 @@ A timeline of everything bought, with status, tracking numbers via the PayPal Tr
 **Models (Groq free tier, via the Vercel AI SDK `@ai-sdk/groq` provider)**:
 - `openai/gpt-oss-120b`: the main agent (planning, tool calls, checkout split, structured plan JSON)
 - `qwen/qwen3.8-27b`: photo input (vision + tool use, up to 3 images per request, ≤20 MB each)
-- `llama-3.1-8b-instant`: cheap, high-volume jobs (coupon page extraction, bill parsing, WhatsApp copy)
+- `openai/gpt-oss-20b`: cheap, high-volume jobs (llama-3.1-8b-instant isn't offered on our account) (coupon page extraction, bill parsing, WhatsApp copy)
 
 The provider sits behind one `lib/ai.ts` file chosen by `AI_PROVIDER`, so we can switch to another provider (e.g. Anthropic) if limits bite. Free-tier limits are per organization. For gpt-oss-120b that's about 30 req/min and 200K tokens/day, so we cache plans, keep tool outputs short, and use mock mode for UI work. The PayPal Agent Toolkit supports the Vercel AI SDK directly.
 
-**Price history**: no free, broad price-history API exists. We build our own: every offer we see is snapshotted into `price_snapshots`, and a daily job re-prices watched items. For the demo, we seed about 90 days of history for the hero items and **label it as seeded**.
+**Price history**: Channel3 has it built in. `priceTracking.retrieveHistory({canonical_product_id, days: 90})` returns up to 90 daily points plus stats (min/max/mean and `current_status`, e.g. "typical"), checked live on Nov 7. We also snapshot each offer we show into `price_snapshots` as a backup. No seeded history is needed. Use the `@channel3/sdk` package (v4.8+): the class is `Channel3`, request fields are snake_case, and results are in `res.response.products`. The older `channel3-sdk` npm package is stale and returns 404. Filter offers to US domains, since a `.ca` store appeared in results.
 
 **Coupons**: Kernel browser visits the merchant page and checkout-adjacent coupon sources. Haiku extracts codes and terms. We show "verified / unverified" and never claim a code works unless the merchant page confirmed it.
 
@@ -170,7 +170,7 @@ Design tokens: ground `#F6F7F9`, surface `#FFFFFF`, ink `#0E1726`, muted `#4A546
 ## 11. Decisions (Nov 4)
 
 - **Market**: US, USD. The persona is a US renter. Bills: rent, electricity, internet, prepaid phone top-up.
-- **WhatsApp**: Meta WhatsApp Cloud API (test number, interactive CTA-URL button). Twilio SMS as fallback.
+- **WhatsApp**: ~~Meta WhatsApp Cloud API~~. On Nov 7, Meta blocked developer sign-up (unused Facebook account, "new device" check), so we switched to the **Twilio WhatsApp sandbox**. The message carries a tappable "Review & Pay" link instead of a native button. The demo user sends the sandbox `join` code once, and again if the session expires (~3 days). Meta support stays in the code behind `WHATSAPP_PROVIDER=meta`.
 - **Visual direction**: calm fintech. Light and airy, one confident deep-blue accent (not PayPal's brand blue), soft cards.
 
 ## 12. Accounts and keys to get
@@ -180,7 +180,7 @@ Design tokens: ground `#F6F7F9`, surface `#FFFFFF`, ink `#0E1726`, muted `#4A546
 | 1 | **PayPal sandbox app** | developer.paypal.com → Log in → Apps & Credentials → *Sandbox* → Create App | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`. Also note the auto-created sandbox **personal** (buyer) and **business** (merchant) accounts under Testing Tools → Sandbox Accounts |
 | 2 | **Groq API key** (free) | console.groq.com → sign in → API Keys → Create. Check your limits under Settings → Limits | `GROQ_API_KEY` |
 | 3 | **Meta WhatsApp Cloud API** | developers.facebook.com → My Apps → Create App (type *Business*) → add **WhatsApp** product → API Setup. Add your phone as a test recipient | `WHATSAPP_TOKEN` (temporary token for now, a system-user token later), `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN` (any string you choose, for the webhook) |
-| 4 | **Channel3** (products) | channel3.com → sign up / hackathon sponsor link on Devpost | `CHANNEL3_API_KEY` |
+| 4 | **Channel3** (products) | trychannel3.com/developers → sign up → dashboard key. Promo code **PAYPAL-HACKATHON-2026** = 20,000 free searches. If credits run out, ask in the #channel3 hackathon Discord. Prize rule: the app must actually *call* Channel3 (API or MCP) for search, enrichment or recommendations; just mentioning it doesn't count | `CHANNEL3_API_KEY` |
 | 5 | **Kernel** (cloud browser) | onkernel.com → sign up / hackathon sponsor credits | `KERNEL_API_KEY` |
 | 6 | **Render** (hosting + Postgres) | render.com → sign up with GitHub → New Postgres (free) | `DATABASE_URL` |
 | 7 | **GitHub repo** | github.com → new **public** repo with an **MIT** license | — |

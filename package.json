@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-sdk/groq": "^4.0.76",
     "@base-ui/react": "^1.9.0",
+    "@channel3/sdk": "^4.8.0",
     "@electric-sql/pglite": "^0.5.15",
     "@onkernel/sdk": "^0.139.0",
     "@paypal/agent-toolkit": "^1.11.0",
@@ -22,7 +23,6 @@
     "ag-grid-community": "^36.3.0",
     "ag-grid-react": "^36.3.0",
     "ai": "^7.0.162",
-    "channel3-sdk": "^1.0.1",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "drizzle-orm": "^0.45.4",

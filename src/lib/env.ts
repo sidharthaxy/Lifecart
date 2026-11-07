@@ -21,6 +21,7 @@ export const env = {
   paypalClientSecret: read("PAYPAL_CLIENT_SECRET"),
   paypalWebhookId: read("PAYPAL_WEBHOOK_ID"),
 
+  whatsappProvider: (read("WHATSAPP_PROVIDER") ?? "twilio") as "twilio" | "meta",
   whatsappToken: read("WHATSAPP_TOKEN"),
   whatsappPhoneNumberId: read("WHATSAPP_PHONE_NUMBER_ID"),
   whatsappAppSecret: read("WHATSAPP_APP_SECRET"),
@@ -70,16 +71,28 @@ export function integrations(): IntegrationStatus[] {
       },
       "Payments are simulated; no PayPal button is shown.",
     ),
-    check(
-      "whatsapp",
-      "WhatsApp Cloud API",
-      {
-        WHATSAPP_TOKEN: env.whatsappToken,
-        WHATSAPP_PHONE_NUMBER_ID: env.whatsappPhoneNumberId,
-        DEMO_WHATSAPP_TO: env.demoWhatsappTo,
-      },
-      "Messages appear in the on-screen phone preview instead.",
-    ),
+    env.whatsappProvider === "meta"
+      ? check(
+          "whatsapp",
+          "WhatsApp (Meta Cloud API)",
+          {
+            WHATSAPP_TOKEN: env.whatsappToken,
+            WHATSAPP_PHONE_NUMBER_ID: env.whatsappPhoneNumberId,
+            DEMO_WHATSAPP_TO: env.demoWhatsappTo,
+          },
+          "Messages appear in the on-screen phone preview instead.",
+        )
+      : check(
+          "whatsapp",
+          "WhatsApp (Twilio sandbox)",
+          {
+            TWILIO_ACCOUNT_SID: env.twilioSid,
+            TWILIO_AUTH_TOKEN: env.twilioToken,
+            TWILIO_FROM: env.twilioFrom,
+            DEMO_WHATSAPP_TO: env.demoWhatsappTo,
+          },
+          "Messages appear in the on-screen phone preview instead.",
+        ),
     check("channel3", "Channel3 products", { CHANNEL3_API_KEY: env.channel3ApiKey }, "Offers come from the seeded catalog."),
     check("kernel", "Kernel browser", { KERNEL_API_KEY: env.kernelApiKey }, "Coupons come from the seeded coupon list."),
     check("db", "Postgres", { DATABASE_URL: env.databaseUrl }, "Using the embedded local Postgres in ./.data (fine for dev)."),
