@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
-import { SendApproval } from "@/components/checkout/send-approval";
+import { PayButton } from "@/components/checkout/pay-button";
 import { IndependentBadge } from "@/components/plan/bits";
 import { latestApprovalForGoal } from "@/lib/approvals";
 import { getDemoUser } from "@/lib/demo-user";
@@ -37,7 +37,7 @@ function Card({ title, amount, children }: { title: string; amount: string; chil
   );
 }
 
-const price = (i: ItemView) => (i.offer?.price ?? i.estimatedPrice ?? 0) * i.qty;
+const price = (i: ItemView) => (i.offer?.price ?? i.estimatedPrice ?? 0) * (i.kind === "service" ? 1 : i.qty);
 
 async function Checkout({ params }: { params: Promise<{ id: string }> }) {
   await connection();
@@ -69,7 +69,7 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
         </Link>
         <h1 className="text-[34px] font-extrabold leading-tight">Here&apos;s how we&apos;ll pay for it</h1>
         <p className="max-w-3xl text-muted-foreground">
-          Each item is matched to the PayPal payment type that fits it. Review the split, then we&apos;ll send one WhatsApp message for you to approve. Nothing is charged before that.
+          Each item is matched to the PayPal payment type that fits it. Review the split, then confirm once with PayPal. Nothing is charged before that.
         </p>
       </section>
 
@@ -128,17 +128,17 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
             </Card>
           ))}
           <span className="text-[13px] text-muted-foreground">
-            {watching.length ? "When a price hits your target, you get a WhatsApp message to approve. We never buy on our own." : "Nothing on watch. Move items here from the plan's item drawer."}
+            {watching.length ? "When a price hits your target, we'll WhatsApp you a link back here to buy it with PayPal. We never buy on our own." : "Nothing on watch. Use the Watch button in your plan to wait for a better price."}
           </span>
         </Lane>
       </div>
 
       <div className="flex flex-wrap items-start gap-6">
         <section className="flex min-w-0 flex-[999_1_520px] flex-col gap-4 rounded-2xl border border-border bg-card p-6">
-          <h2 className="text-[17px] font-semibold">Approval settings</h2>
+          <h2 className="text-[17px] font-semibold">Payment details</h2>
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2.5 text-sm">
-            <dt className="text-muted-foreground">WhatsApp</dt>
-            <dd>{phone ? `Your phone ${phone} (Twilio sandbox)` : "Not connected; you'll see the message on screen"}</dd>
+            <dt className="text-muted-foreground">Alerts</dt>
+            <dd>{phone ? `WhatsApp ${phone} for price drops, bills and renewals` : "WhatsApp not connected"}</dd>
             <dt className="text-muted-foreground">Ship to</dt>
             <dd>{user.shipTo ?? "Not set"}</dd>
             <dt className="text-muted-foreground">Pay with</dt>
@@ -176,7 +176,7 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
               Service invoices ({services.map((s) => `${money(price(s))}${s.cadence === "monthly" ? "/mo" : ""}`).join(", ")}) arrive separately.
             </span>
           )}
-          <SendApproval goalId={id} phone={phone} />
+          <PayButton goalId={id} disabled={orderTotal + subTotal <= 0 && !services.length} />
         </aside>
       </div>
     </div>

@@ -35,7 +35,8 @@ export type ItemView = {
 };
 
 export function computeTotals(items: ItemView[]) {
-  const line = (i: ItemView) => (i.offer?.price ?? i.estimatedPrice ?? 0) * i.qty;
+  // A service price is already the full (monthly) amount; quantity only multiplies products.
+  const line = (i: ItemView) => (i.offer?.price ?? i.estimatedPrice ?? 0) * (i.kind === "service" ? 1 : i.qty);
   const orders = items.filter((i) => i.payType === "order");
   const subs = items.filter((i) => i.payType === "subscription");
   const invOnce = items.filter((i) => i.payType === "invoice" && i.cadence !== "monthly");

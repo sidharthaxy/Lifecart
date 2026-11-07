@@ -41,7 +41,7 @@ function ItemCell({ data }: CustomCellRendererProps<Row>) {
       <div className="flex min-w-0 flex-col leading-snug">
         <span className="truncate font-semibold" title={data.name}>
           {data.name}
-          {data.qty > 1 && <span className="font-normal text-muted-foreground"> × {data.qty}</span>}
+          {data.qty > 1 && data.kind !== "service" && <span className="font-normal text-muted-foreground"> × {data.qty}</span>}
         </span>
         <span className="line-clamp-2 whitespace-normal text-[13px] text-muted-foreground">{data.reason}</span>
       </div>
@@ -102,6 +102,34 @@ function PriceCell({ data }: CustomCellRendererProps<Row>) {
   );
 }
 
+type GridContext = { onWatch: (id: string, on: boolean) => void; busy: string | null };
+
+function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, GridContext>) {
+  if (!data || isGroup(data) || data.kind === "service") return null;
+  const watching = data.payType === "watch";
+  const busy = context?.busy === data.id;
+  return (
+    <div className="flex h-full items-center justify-end">
+      <button
+        type="button"
+        disabled={busy}
+        aria-label={watching ? `Buy ${data.name} now` : `Watch ${data.name} for a lower price`}
+        onClick={(e) => {
+          e.stopPropagation(); // don't open the drawer
+          context?.onWatch(data.id, !watching);
+        }}
+        className={
+          watching
+            ? "min-h-9 min-w-[84px] rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground disabled:opacity-60"
+            : "min-h-9 min-w-[84px] rounded-lg border border-[#C98A1E] bg-card px-3 text-[13px] font-semibold text-warning hover:bg-warning-soft disabled:opacity-60"
+        }
+      >
+        {busy ? "…" : watching ? "Buy now" : "Watch"}
+      </button>
+    </div>
+  );
+}
+
 function GroupHeader({ data }: CustomCellRendererProps<Row>) {
   if (!isGroup(data)) return null;
   return (
@@ -112,7 +140,20 @@ function GroupHeader({ data }: CustomCellRendererProps<Row>) {
   );
 }
 
-export function PlanGrid({ items, onSelect, quickFilter }: { items: ItemView[]; onSelect: (id: string) => void; quickFilter?: string }) {
+export function PlanGrid({
+  items,
+  onSelect,
+  onWatch,
+  busy = null,
+  quickFilter,
+}: {
+  items: ItemView[];
+  onSelect: (id: string) => void;
+  onWatch: (id: string, on: boolean) => void;
+  busy?: string | null;
+  quickFilter?: string;
+}) {
+  const context = useMemo<GridContext>(() => ({ onWatch, busy }), [onWatch, busy]);
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     let last = "";
@@ -128,11 +169,12 @@ export function PlanGrid({ items, onSelect, quickFilter }: { items: ItemView[]; 
 
   const cols = useMemo<ColDef<Row>[]>(
     () => [
-      { headerName: "Item and why", flex: 3, minWidth: 320, cellRenderer: ItemCell, getQuickFilterText: (p) => (isGroup(p.data) ? "" : `${p.data!.name} ${p.data!.reason}`) },
-      { headerName: "Best offer", flex: 1.2, minWidth: 160, cellRenderer: StoreCell, getQuickFilterText: (p) => (isGroup(p.data) ? "" : p.data!.offer?.merchant ?? "") },
-      { headerName: "Price history", flex: 1, minWidth: 140, cellRenderer: HistoryCell },
-      { headerName: "Pays as", width: 128, cellRenderer: PayCell },
-      { headerName: "Price", width: 130, cellRenderer: PriceCell, headerClass: "ag-right-aligned-header" },
+      { headerName: "Item and why", flex: 3, minWidth: 250, cellRenderer: ItemCell, getQuickFilterText: (p) => (isGroup(p.data) ? "" : `${p.data!.name} ${p.data!.reason}`) },
+      { headerName: "Best offer", flex: 1.2, minWidth: 130, cellRenderer: StoreCell, getQuickFilterText: (p) => (isGroup(p.data) ? "" : p.data!.offer?.merchant ?? "") },
+      { headerName: "Price history", flex: 1, minWidth: 120, cellRenderer: HistoryCell },
+      { headerName: "Pays as", width: 118, cellRenderer: PayCell },
+      { headerName: "Price", width: 112, cellRenderer: PriceCell, headerClass: "ag-right-aligned-header" },
+      { headerName: "", colId: "action", width: 112, cellRenderer: ActionCell },
     ],
     [],
   );
@@ -149,8 +191,13 @@ export function PlanGrid({ items, onSelect, quickFilter }: { items: ItemView[]; 
         isFullWidthRow={(p) => isGroup(p.rowNode.data)}
         fullWidthCellRenderer={GroupHeader}
         getRowClass={(p: RowClassParams<Row>) => (isGroup(p.data) ? "lc-group-row" : "cursor-pointer")}
-        onRowClicked={(e) => !isGroup(e.data) && e.data && onSelect(e.data.id)}
+        onRowClicked={(e) => {
+          // AG Grid's row listener isn't React's, so ignore clicks that came from a button inside the row.
+          if ((e.event?.target as HTMLElement | null)?.closest("button")) return;
+          if (!isGroup(e.data) && e.data) onSelect(e.data.id);
+        }}
         quickFilterText={quickFilter}
+        context={context}
         suppressCellFocus
         domLayout="autoHeight"
       />

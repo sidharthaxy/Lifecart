@@ -41,7 +41,16 @@ export type Approval = typeof schema.approvals.$inferSelect;
 // ---------------------------------------------------------------------------------------------------
 // Create + send
 
-export async function createCartApproval(goalId: string, origin: string): Promise<{ link: string; message: string; whatsapp: SendResult } | { error: string }> {
+/**
+ * Freeze what will be paid and mint a single-use link.
+ * In-app checkout uses notify=false (the user is already here and goes straight to PayPal).
+ * notify=true sends the link over WhatsApp (used when LifeCart reaches out: price drops, bills, renewals).
+ */
+export async function createCartApproval(
+  goalId: string,
+  origin: string,
+  opts: { notify: boolean } = { notify: false },
+): Promise<{ token: string; link: string; message: string; whatsapp: SendResult | null } | { error: string }> {
   const plan = await getPlan(goalId).catch(() => null);
   if (!plan || plan.goal.status !== "ready") return { error: "This plan isn't ready to pay yet." };
 
@@ -49,7 +58,7 @@ export async function createCartApproval(goalId: string, origin: string): Promis
     itemId: i.id,
     name: i.name,
     merchant: i.offer?.source === "channel3" ? i.offer.merchant : (i.offer?.merchant ?? "LifeCart"),
-    qty: i.qty,
+    qty: i.kind === "service" ? 1 : i.qty,
     unit: round(i.offer?.price ?? i.estimatedPrice ?? 0),
   });
   const orders = plan.items.filter((i) => i.payType === "order").map(line).filter((l) => l.unit > 0);
@@ -106,12 +115,13 @@ export async function createCartApproval(goalId: string, origin: string): Promis
     .filter((x) => x !== null)
     .join("\n");
 
+  if (!opts.notify) return { token, link, message, whatsapp: null };
   const whatsapp = await sendWhatsApp(message);
   await db
     .update(schema.approvals)
     .set({ status: whatsapp.sent ? "sent" : "pending", whatsappMessageId: whatsapp.sent ? whatsapp.sid : null, updatedAt: new Date() })
     .where(eq(schema.approvals.id, approval.id));
-  return { link, message, whatsapp };
+  return { token, link, message, whatsapp };
 }
 
 // ---------------------------------------------------------------------------------------------------

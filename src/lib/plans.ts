@@ -1,5 +1,6 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { isIndependent } from "./channel3";
 import { num } from "./format";
 import { computeTotals } from "./totals";
 export { computeTotals };
@@ -27,7 +28,7 @@ export async function getPlan(goalId: string) {
     imageUrl: o.imageUrl,
     price: num(o.price)!,
     wasPrice: num(o.wasPrice),
-    independent: o.isSmb,
+    independent: o.source === "channel3" ? isIndependent(o.merchant) : o.isSmb,
     availability: o.availability,
     priceStatus: o.priceStatus,
     stats: o.stats,

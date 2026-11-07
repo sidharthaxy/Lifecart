@@ -27,6 +27,11 @@ export type C3Offer = {
 const BIG_BOX = [
   "amazon.", "walmart.", "target.", "chewy.", "petsmart.", "petco.", "bestbuy.", "homedepot.", "lowes.",
   "costco.", "qvc.", "wayfair.", "ebay.", "kohls.", "macys.", "samsclub.", "bjs.", "tractorsupply.", "overstock.",
+  // brand-owned stores and other national chains
+  "apple.", "samsung.", "google.", "microsoft.", "dell.", "hp.", "lenovo.", "sony.", "bose.", "nike.", "adidas.",
+  "ikea.", "staples.", "officedepot.", "adorama.", "bhphotovideo.", "newegg.", "nordstrom.", "jcpenney.", "dickssportinggoods.",
+  "rei.", "kroger.", "cvs.", "walgreens.", "ulta.", "sephora.", "gap.", "oldnavy.", "hm.", "zara.", "uniqlo.", "bedbathandbeyond.",
+  "potterybarn.", "westelm.", "crateandbarrel.", "williams-sonoma.", "lego.", "toysrus.", "gamestop.", "petsupermarket.", "fivebelow.",
 ];
 export const isIndependent = (domain: string) => !BIG_BOX.some((b) => domain.includes(b));
 

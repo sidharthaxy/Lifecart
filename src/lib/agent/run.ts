@@ -256,10 +256,11 @@ export async function runPlan(goalId: string, emit: Emit) {
 }
 
 /** Keep payment rails consistent no matter what the model returned. */
-function normalize<T extends { kind: string; payType: string; cadence: string; priority: string; targetPrice: number | null; searchQuery: string }>(it: T): T {
+function normalize<T extends { kind: string; payType: string; cadence: string; priority: string; targetPrice: number | null; searchQuery: string; qty: number }>(it: T): T {
   const x = { ...it };
   if (x.kind === "service") {
     x.payType = "invoice"; // people are paid by invoice, never "watched" or subscribed
+    x.qty = 1; // the service price is already the full amount
     x.searchQuery = "";
     x.targetPrice = null;
   } else {

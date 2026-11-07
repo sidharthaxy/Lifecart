@@ -9,8 +9,8 @@ import { listPlans } from "@/lib/plans";
 const STEPS = [
   ["01", "Describe your life", "Plain words or a photo. The agent reads your schedule, space and budget."],
   ["02", "Get a priced plan", "Every item explained, matched to a real store listing and checked against 90-day price history."],
-  ["03", "Approve on WhatsApp", "Purchases, bills and price drops arrive as one message with a Review & Pay link. Nothing moves without your tap."],
-  ["04", "Paid the right way", "One-time goods as PayPal Orders, refills as Subscriptions, local services as Invoices."],
+  ["03", "Pay with PayPal", "One confirmation covers orders, refills and service invoices. Nothing moves without your approval."],
+  ["04", "Alerts on WhatsApp", "When a watched price drops or a bill is due, we message you a link back here to pay."],
 ] as const;
 
 async function RecentPlans() {
@@ -52,7 +52,7 @@ export default function Home() {
             Tell us what&apos;s changing. We&apos;ll plan the shopping and handle the bills.
           </h1>
           <p className="max-w-[640px] text-lg text-muted-foreground">
-            Describe your situation or drop a photo. LifeCart builds a complete, budgeted list with real prices and price history, then pays through PayPal, only after you approve on WhatsApp.
+            Describe your situation or drop a photo. LifeCart builds a complete, budgeted list with real prices and price history, then pays through PayPal when you confirm. Price drops and bills come to you on WhatsApp.
           </p>
         </section>
 

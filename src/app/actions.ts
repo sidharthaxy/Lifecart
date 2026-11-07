@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createCartApproval } from "@/lib/approvals";
+import { createCartApproval, startPayment } from "@/lib/approvals";
 import { createGoalSafely } from "@/lib/goals";
 import { allow, clientKey } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
@@ -34,18 +34,21 @@ export async function moveToWatch(itemId: string, watch: boolean, target?: numbe
   return setItemRail(itemId, watch, target);
 }
 
-export type SendApprovalState =
-  | { link: string; message: string; sent: boolean; reason?: string }
-  | { error: string }
-  | undefined;
+export type PayState = { error: string } | undefined;
 
-/** "Send to WhatsApp for approval" on the checkout page. */
-export async function sendForApproval(goalId: string): Promise<SendApprovalState> {
+/**
+ * "Pay with PayPal" on the checkout page: freeze the amounts in a single-use approval and go straight to PayPal.
+ * (WhatsApp is only for when LifeCart reaches out: price drops, bills due, renewals.)
+ */
+export async function payNow(goalId: string): Promise<PayState> {
   if (!isId(goalId)) return { error: "Unknown plan" };
   const h = await headers();
-  const rl = allow(`approval:${clientKey(h)}`, 10, 60 * 60_000);
-  if (!rl.ok) return { error: "Too many approval messages. Try again in a few minutes." };
-  const res = await createCartApproval(goalId, appOrigin(h));
-  if ("error" in res) return { error: res.error };
-  return { link: res.link, message: res.message, sent: res.whatsapp.sent, reason: res.whatsapp.sent ? undefined : res.whatsapp.reason };
+  const rl = allow(`pay:${clientKey(h)}`, 20, 60 * 60_000);
+  if (!rl.ok) return { error: "Too many payment attempts. Try again in a few minutes." };
+  const origin = appOrigin(h);
+  const created = await createCartApproval(goalId, origin, { notify: false });
+  if ("error" in created) return { error: created.error };
+  const started = await startPayment(created.token, origin);
+  if ("error" in started) return { error: started.error };
+  redirect(started.redirect);
 }

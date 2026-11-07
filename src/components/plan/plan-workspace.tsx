@@ -52,10 +52,16 @@ export function PlanWorkspace({
     startTransition(() => selectOffer(item.id, offerId));
   };
 
+  const [busy, setBusy] = useState<string | null>(null);
   const watch = async (id: string, on: boolean) => {
-    const res = await moveToWatch(id, on);
-    if ("error" in res) return;
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, payType: res.payType, targetPrice: res.targetPrice, priority: on ? "can_wait" : "now" } : it)));
+    setBusy(id);
+    try {
+      const res = await moveToWatch(id, on);
+      if ("error" in res) return;
+      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, payType: res.payType, targetPrice: res.targetPrice, priority: on ? "can_wait" : "now" } : it)));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const r = totals.rails;
@@ -73,11 +79,11 @@ export function PlanWorkspace({
           </label>
         </div>
         <div className="overflow-x-auto">
-          <div className="min-w-[900px]">
-            <PlanGrid items={items} onSelect={setSelected} quickFilter={filter} />
+          <div className="min-w-[860px]">
+            <PlanGrid items={items} onSelect={setSelected} onWatch={watch} busy={busy} quickFilter={filter} />
           </div>
         </div>
-        <p className="border-t border-border px-6 py-3 text-xs text-muted-foreground">Click a row to compare offers and see its price history.</p>
+        <p className="border-t border-border px-6 py-3 text-xs text-muted-foreground">Click a row to compare offers and price history. Watch takes an item out of today&apos;s total until its price drops.</p>
       </section>
 
       <aside aria-label="Budget summary" className="flex flex-[1_1_320px] flex-col gap-4">
@@ -147,7 +153,7 @@ export function PlanWorkspace({
           >
             Review checkout
           </a>
-          <span className="text-center text-xs text-muted-foreground">You&apos;ll approve each payment on WhatsApp before anything is charged.</span>
+          <span className="text-center text-xs text-muted-foreground">You&apos;ll confirm with PayPal before anything is charged.</span>
         </section>
       </aside>
 
