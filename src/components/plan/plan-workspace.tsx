@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
-import { selectOffer } from "@/app/actions";
+import { moveToWatch, selectOffer } from "@/app/actions";
 import { money } from "@/lib/format";
 import { computeTotals, type ItemView } from "@/lib/totals";
 import { ItemSheet } from "./item-sheet";
@@ -36,7 +36,7 @@ export function PlanWorkspace({
       .concat(items.filter((i) => i.payType === "order"))
       .sort((a, b) => (b.offer?.price ?? 0) - (a.offer?.price ?? 0));
     const pick = movable[0];
-    return pick ? { name: pick.name, saves: (pick.offer?.price ?? 0) * pick.qty } : null;
+    return pick ? { id: pick.id, name: pick.name, saves: (pick.offer?.price ?? 0) * pick.qty } : null;
   }, [diff, items]);
 
   const useOffer = (offerId: string) => {
@@ -50,6 +50,12 @@ export function PlanWorkspace({
       }),
     );
     startTransition(() => selectOffer(item.id, offerId));
+  };
+
+  const watch = async (id: string, on: boolean) => {
+    const res = await moveToWatch(id, on);
+    if ("error" in res) return;
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, payType: res.payType, targetPrice: res.targetPrice, priority: on ? "can_wait" : "now" } : it)));
   };
 
   const r = totals.rails;
@@ -107,8 +113,17 @@ export function PlanWorkspace({
             )}
           </dl>
           {suggestion && (
-            <div className="rounded-xl bg-warning-soft p-3.5 text-sm text-[#5C3800]">
-              <strong>Suggestion:</strong> move the {suggestion.name.toLowerCase()} to price watch to save {money(suggestion.saves)} this month.
+            <div className="flex flex-col gap-2 rounded-xl bg-warning-soft p-3.5 text-sm text-[#5C3800]">
+              <span>
+                <strong>Suggestion:</strong> move the {suggestion.name.toLowerCase()} to price watch to save {money(suggestion.saves)} this month.
+              </span>
+              <button
+                type="button"
+                onClick={() => watch(suggestion.id, true)}
+                className="min-h-9 self-start rounded-lg border border-[#C98A1E] bg-card px-3 text-[13px] font-semibold"
+              >
+                Apply suggestion
+              </button>
             </div>
           )}
         </section>
@@ -136,7 +151,7 @@ export function PlanWorkspace({
         </section>
       </aside>
 
-      <ItemSheet item={item} onClose={() => setSelected(null)} onUse={useOffer} />
+      <ItemSheet item={item} onClose={() => setSelected(null)} onUse={useOffer} onWatch={(on) => item && watch(item.id, on)} />
     </div>
   );
 }

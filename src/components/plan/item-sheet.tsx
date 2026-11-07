@@ -62,7 +62,17 @@ function OfferRow({ o, chosen, onUse }: { o: OfferView; chosen: boolean; onUse?:
   );
 }
 
-export function ItemSheet({ item, onClose, onUse }: { item: ItemView | null; onClose: () => void; onUse: (offerId: string) => void }) {
+export function ItemSheet({
+  item,
+  onClose,
+  onUse,
+  onWatch,
+}: {
+  item: ItemView | null;
+  onClose: () => void;
+  onUse: (offerId: string) => void;
+  onWatch: (watch: boolean) => void;
+}) {
   const v = priceVerdict(item?.offer ?? null);
   const s = item?.offer?.stats;
   return (
@@ -118,6 +128,28 @@ export function ItemSheet({ item, onClose, onUse }: { item: ItemView | null; onC
                       {v.label}
                       {item.payType === "watch" ? ". We'll message you when it hits your target." : v.tone === "bad" ? ". Consider waiting." : ""}
                     </span>
+                  )}
+                </section>
+              )}
+
+              {item.kind !== "service" && (
+                <section className="flex flex-col gap-2 rounded-xl border border-border p-3.5">
+                  {item.payType === "watch" ? (
+                    <>
+                      <span className="text-sm">
+                        <strong>Watching for {money(item.targetPrice)}</strong> or less. You&apos;ll get a WhatsApp message to approve when it hits.
+                      </span>
+                      <button type="button" onClick={() => onWatch(false)} className="min-h-10 self-start rounded-lg border border-border px-3 text-sm font-semibold hover:border-primary">
+                        Buy now instead
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm text-muted-foreground">Not urgent? Wait for a better price and approve it on WhatsApp when it drops.</span>
+                      <button type="button" onClick={() => onWatch(true)} className="min-h-10 self-start rounded-lg border border-[#C98A1E] px-3 text-sm font-semibold text-warning hover:bg-warning-soft">
+                        Move to price watch
+                      </button>
+                    </>
                   )}
                 </section>
               )}

@@ -91,3 +91,27 @@ export async function chooseOffer(itemId: string, offerId: string) {
   const db = await getDb();
   await db.update(schema.planItems).set({ chosenOfferId: offerId }).where(eq(schema.planItems.id, itemId));
 }
+
+/**
+ * Move a product between "buy now" and "price watch". Services can't be watched.
+ * Default target: the 90-day low if it's below today's price, else 15% off today's price.
+ */
+export async function setItemRail(itemId: string, watch: boolean, target?: number) {
+  const db = await getDb();
+  const [item] = await db.select().from(schema.planItems).where(eq(schema.planItems.id, itemId));
+  if (!item) return { error: "Unknown item" };
+  if (item.kind === "service") return { error: "Services are booked, not watched." };
+  const [offer] = item.chosenOfferId ? await db.select().from(schema.offers).where(eq(schema.offers.id, item.chosenOfferId)) : [];
+  const price = num(offer?.price) ?? num(item.estimatedPrice) ?? 0;
+
+  if (watch) {
+    const low = offer?.stats?.min;
+    let t = target ?? (low && low < price * 0.98 ? low : price * 0.85);
+    t = Math.round(Math.min(Math.max(t, 1), price) * 100) / 100;
+    await db.update(schema.planItems).set({ payType: "watch", priority: "can_wait", targetPrice: String(t) }).where(eq(schema.planItems.id, itemId));
+    return { payType: "watch" as const, targetPrice: t };
+  }
+  const payType = item.cadence === "monthly" ? ("subscription" as const) : ("order" as const);
+  await db.update(schema.planItems).set({ payType, priority: "now", targetPrice: null }).where(eq(schema.planItems.id, itemId));
+  return { payType, targetPrice: null };
+}

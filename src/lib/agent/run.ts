@@ -163,6 +163,11 @@ export async function runPlan(goalId: string, emit: Emit) {
     await db.delete(schema.planItems).where(eq(schema.planItems.goalId, goalId));
     let sort = 0;
     for (const [i, it] of flat.entries()) {
+      // The model set watch targets from its own estimate; re-anchor them to the real price we found.
+      const realPrice = chosen.get(i) != null ? offersByItem.get(i)![chosen.get(i)!].price : null;
+      if (it.payType === "watch" && realPrice && (it.targetPrice == null || it.targetPrice >= realPrice)) {
+        it.targetPrice = Math.round(realPrice * 0.85 * 100) / 100;
+      }
       const [row] = await db
         .insert(schema.planItems)
         .values({

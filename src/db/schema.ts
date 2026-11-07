@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const payType = pgEnum("pay_type", ["order", "subscription", "invoice", "watch"]);
 export const priority = pgEnum("priority", ["now", "can_wait"]);
@@ -138,14 +138,41 @@ export const approvals = pgTable("approvals", {
   kind: approvalKind("kind").notNull(),
   amount: money("amount").notNull(),
   title: text("title").notNull(),
-  /** What will be paid: plan item ids, bill id, etc. */
-  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  /** What will be paid, frozen at approval time (amounts are never taken from the browser). */
+  payload: jsonb("payload").$type<ApprovalPayload>().notNull(),
+  /** SHA-256 of the single-use link token; the raw token only ever exists in the WhatsApp link. */
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   status: approvalStatus("status").notNull().default("pending"),
+  /** Where the PayPal flow is: order -> subscription -> invoices -> done */
+  step: text("step").notNull().default("order"),
   whatsappMessageId: text("whatsapp_message_id"),
+  paypalOrderId: text("paypal_order_id"),
+  paypalSubscriptionId: text("paypal_subscription_id"),
+  payerEmail: text("payer_email"),
+  result: jsonb("result").$type<ApprovalResult>(),
+  error: text("error"),
   createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type ApprovalLine = { itemId: string; name: string; merchant: string; qty: number; unit: number };
+export type ApprovalPayload = {
+  goalId: string;
+  orders: ApprovalLine[];
+  orderTotal: number;
+  subscriptions: ApprovalLine[];
+  subscriptionMonthly: number;
+  invoices: (ApprovalLine & { cadence: "one_time" | "monthly" })[];
+  shipTo?: string;
+};
+export type ApprovalResult = {
+  captureId?: string;
+  capturedAmount?: number;
+  subscriptionStatus?: string;
+  invoices?: { id: string; name: string; amount: number; url?: string; status: string }[];
+  notes?: string[];
+};
 
 export const payments = pgTable("payments", {
   id: id(),
@@ -170,5 +197,5 @@ export const apiUsage = pgTable(
     meta: jsonb("meta").$type<Record<string, string | number>>(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.day, t.provider] })],
+  (t) => [uniqueIndex("api_usage_day_provider_idx").on(t.day, t.provider)],
 );
