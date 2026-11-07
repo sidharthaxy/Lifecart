@@ -105,7 +105,14 @@ function PriceCell({ data }: CustomCellRendererProps<Row>) {
 type GridContext = { onWatch: (id: string, on: boolean) => void; busy: string | null };
 
 function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, GridContext>) {
-  if (!data || isGroup(data) || data.kind === "service") return null;
+  if (!data || isGroup(data)) return null;
+  if (data.purchased)
+    return (
+      <div className="flex h-full items-center justify-end">
+        <span className="rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">Bought ✓</span>
+      </div>
+    );
+  if (data.kind === "service") return null;
   const watching = data.payType === "watch";
   const busy = context?.busy === data.id;
   return (

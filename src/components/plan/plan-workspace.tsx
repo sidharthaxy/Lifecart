@@ -105,6 +105,12 @@ export function PlanWorkspace({
             <input id="cap" type="range" min={200} max={3000} step={50} value={cap} onChange={(e) => setCap(Number(e.target.value))} className="w-full accent-primary" />
           </div>
           <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2.5 border-t border-[#EEF1F5] pt-3.5 text-sm">
+            {totals.paid > 0 && (
+              <>
+                <dt className="text-success">Already paid</dt>
+                <dd className="tabular text-right font-semibold text-success">{money(totals.paid)}</dd>
+              </>
+            )}
             <dt className="text-muted-foreground">Buy now</dt>
             <dd className="tabular text-right font-semibold">{money(totals.buyNow)}</dd>
             <dt className="text-muted-foreground">Monthly after that</dt>

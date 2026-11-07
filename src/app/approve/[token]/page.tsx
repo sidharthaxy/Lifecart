@@ -129,6 +129,11 @@ async function Approval({ params, searchParams }: { params: Promise<{ token: str
         </span>
       </section>
 
+      {p.watch && (
+        <p className="rounded-xl bg-success-soft px-4 py-3 text-sm text-[#0B4F31]">
+          <strong>Price dropped</strong> from {money(p.watch.was)} to {money(p.watch.now)}. Your target was {money(p.watch.target)}.
+        </p>
+      )}
       {sp.cancelled && <p className="rounded-xl bg-warning-soft px-4 py-3 text-sm text-[#5C3800]">You left PayPal before approving. Nothing was charged.</p>}
       {err && <p role="alert" className="rounded-xl bg-warning-soft px-4 py-3 text-sm text-[#5C3800]">{err}</p>}
 

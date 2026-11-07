@@ -65,6 +65,11 @@ export const planItems = pgTable("plan_items", {
   targetPrice: money("target_price"),
   chosenOfferId: uuid("chosen_offer_id"),
   sort: integer("sort").notNull().default(0),
+  /** Set when a PayPal payment for this item is captured, so it's never charged twice. */
+  purchasedAt: timestamp("purchased_at", { withTimezone: true }),
+  /** Price watch: last time we checked the live price, and that price. */
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  lastPrice: money("last_price"),
 });
 
 export const offers = pgTable("offers", {
@@ -159,6 +164,8 @@ export const approvals = pgTable("approvals", {
 export type ApprovalLine = { itemId: string; name: string; merchant: string; qty: number; unit: number };
 export type ApprovalPayload = {
   goalId: string;
+  /** For price-drop approvals: the watched item and the prices that triggered the alert. */
+  watch?: { itemId: string; was: number; now: number; target: number };
   orders: ApprovalLine[];
   orderTotal: number;
   subscriptions: ApprovalLine[];

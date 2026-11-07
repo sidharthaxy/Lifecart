@@ -75,6 +75,9 @@ export async function getPlan(goalId: string) {
       offer: chosen ? toOffer(chosen) : null,
       alternatives: mine.filter((o) => o.id !== chosen?.id).map(toOffer),
       history,
+      purchased: Boolean(i.purchasedAt),
+      lastPrice: num(i.lastPrice),
+      lastCheckedAt: i.lastCheckedAt ? i.lastCheckedAt.toISOString() : null,
     };
   });
 

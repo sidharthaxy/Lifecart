@@ -47,18 +47,20 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
   if (plan.goal.status !== "ready") redirect(`/plans/${id}`);
   const [user, last] = await Promise.all([getDemoUser(), latestApprovalForGoal(id)]);
 
-  const orders = plan.items.filter((i) => i.payType === "order");
+  const bought = plan.items.filter((i) => i.purchased);
+  const unpaid = plan.items.filter((i) => !i.purchased);
+  const orders = unpaid.filter((i) => i.payType === "order");
   const byStore = new Map<string, ItemView[]>();
   for (const i of orders) {
     const store = i.offer?.source === "channel3" ? i.offer.merchant : "Other items (estimated)";
     byStore.set(store, [...(byStore.get(store) ?? []), i]);
   }
-  const subs = plan.items.filter((i) => i.payType === "subscription");
-  const services = plan.items.filter((i) => i.payType === "invoice");
-  const watching = plan.items.filter((i) => i.payType === "watch");
+  const subs = unpaid.filter((i) => i.payType === "subscription");
+  const services = unpaid.filter((i) => i.payType === "invoice");
+  const watching = unpaid.filter((i) => i.payType === "watch");
   const orderTotal = orders.reduce((a, i) => a + price(i), 0);
   const subTotal = subs.reduce((a, i) => a + price(i), 0);
-  const belowList = plan.items.filter((i) => i.payType !== "watch" && i.offer?.wasPrice).reduce((a, i) => a + (i.offer!.wasPrice! - i.offer!.price) * i.qty, 0);
+  const belowList = unpaid.filter((i) => i.payType !== "watch" && i.offer?.wasPrice).reduce((a, i) => a + (i.offer!.wasPrice! - i.offer!.price) * i.qty, 0);
   const phone = maskedPhone();
 
   return (
@@ -82,6 +84,12 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
             {last.result?.invoices?.length ? `, ${last.result.invoices.length} invoice(s) sent` : ""}.
           </span>
         </div>
+      )}
+
+      {bought.length > 0 && (
+        <p className="rounded-xl border border-border bg-card px-5 py-3 text-sm text-muted-foreground">
+          <strong className="text-foreground">Already paid:</strong> {bought.map((i) => i.name).join(", ")}. These won&apos;t be charged again.
+        </p>
       )}
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(270px,1fr))] items-start gap-4">

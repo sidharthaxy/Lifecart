@@ -107,3 +107,28 @@ export async function priceHistory(productId: string, days = 90): Promise<PriceH
     return null; // history is a nice-to-have; never fail the plan over it
   }
 }
+
+/**
+ * Today's price for a product at a specific store (price watch). Falls back to the price-history "current" value.
+ * Returns null when unknown or over today's credit cap.
+ */
+export async function currentPrice(productId: string, domain: string): Promise<number | null> {
+  if (!env.channel3ApiKey || !(await canSpend("channel3", { units: 1 }))) return null;
+  try {
+    await record("channel3", { units: 1 });
+    const p = (await withTimeout(
+      c3().products.retrieve({ product_id: productId, website_ids: [domain], country: "US", currency: "USD" } as never, REQ as never),
+      12_000,
+      "Price check",
+    )) as unknown as RawProduct;
+    const prices = (p.offers ?? [])
+      .filter((o) => !o.domain || o.domain.replace(/^www\./, "") === domain)
+      .map((o) => o.price?.price)
+      .filter((n): n is number => typeof n === "number");
+    if (prices.length) return Math.min(...prices);
+  } catch {
+    // fall through to history
+  }
+  const h = await priceHistory(productId, 7);
+  return h?.stats.current ?? null;
+}

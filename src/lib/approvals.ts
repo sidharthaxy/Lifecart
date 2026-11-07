@@ -61,27 +61,34 @@ export async function createCartApproval(
     qty: i.kind === "service" ? 1 : i.qty,
     unit: round(i.offer?.price ?? i.estimatedPrice ?? 0),
   });
-  const orders = plan.items.filter((i) => i.payType === "order").map(line).filter((l) => l.unit > 0);
-  const subscriptions = plan.items.filter((i) => i.payType === "subscription").map(line).filter((l) => l.unit > 0);
-  const invoices = plan.items
+  const open = plan.items.filter((i) => !i.purchased); // never charge for something already bought
+  const orders = open.filter((i) => i.payType === "order").map(line).filter((l) => l.unit > 0);
+  const subscriptions = open.filter((i) => i.payType === "subscription").map(line).filter((l) => l.unit > 0);
+  const invoices = open
     .filter((i) => i.payType === "invoice")
     .map((i) => ({ ...line(i), cadence: (i.cadence === "monthly" ? "monthly" : "one_time") as "monthly" | "one_time" }))
     .filter((l) => l.unit > 0);
 
   const orderTotal = round(orders.reduce((a, l) => a + l.unit * l.qty, 0));
   const subscriptionMonthly = round(subscriptions.reduce((a, l) => a + l.unit * l.qty, 0));
-  if (!orders.length && !subscriptions.length && !invoices.length) return { error: "There's nothing to pay in this plan yet." };
+  if (!orders.length && !subscriptions.length && !invoices.length) return { error: "Everything in this plan is already paid or on price watch." };
 
   const user = await getDemoUser();
   const payload: ApprovalPayload = { goalId, orders, orderTotal, subscriptions, subscriptionMonthly, invoices, shipTo: user.shipTo ?? undefined };
   const token = randomBytes(24).toString("base64url");
   const db = await getDb();
 
-  // Only one live link per plan: retire older unpaid ones.
+  // Only one live checkout link per plan: retire older unpaid cart links (price-drop links stay valid).
   await db
     .update(schema.approvals)
     .set({ status: "expired", updatedAt: new Date() })
-    .where(and(sql`${schema.approvals.payload}->>'goalId' = ${goalId}`, inArray(schema.approvals.status, ["pending", "sent"])));
+    .where(
+      and(
+        sql`${schema.approvals.payload}->>'goalId' = ${goalId}`,
+        eq(schema.approvals.kind, "cart"),
+        inArray(schema.approvals.status, ["pending", "sent"]),
+      ),
+    );
 
   const [approval] = await db
     .insert(schema.approvals)
@@ -122,6 +129,79 @@ export async function createCartApproval(
     .set({ status: whatsapp.sent ? "sent" : "pending", whatsappMessageId: whatsapp.sent ? whatsapp.sid : null, updatedAt: new Date() })
     .where(eq(schema.approvals.id, approval.id));
   return { token, link, message, whatsapp };
+}
+
+const WATCH_LINK_TTL_MS = 6 * 60 * 60_000; // price-drop links stay valid for 6 hours
+
+/**
+ * A watched item really dropped to its target: mint a single-item approval at the new price.
+ * Does NOT message anyone; the price check sends one WhatsApp digest per run (see lib/watch.ts).
+ * Cooldown: at most one alert per item per 24 hours.
+ */
+export async function createWatchApproval(
+  input: { itemId: string; now: number; was: number; target: number },
+  origin: string,
+): Promise<{ approvalId: string; link: string; line: string } | { skipped: string }> {
+  const db = await getDb();
+  const [item] = await db.select().from(schema.planItems).where(eq(schema.planItems.id, input.itemId));
+  if (!item || item.purchasedAt) return { skipped: "already bought" };
+  if (item.kind === "service") return { skipped: "services aren't watched" };
+  const [recent] = await db
+    .select({ id: schema.approvals.id })
+    .from(schema.approvals)
+    .where(
+      and(
+        eq(schema.approvals.kind, "watch"),
+        sql`${schema.approvals.payload}->'watch'->>'itemId' = ${input.itemId}`,
+        sql`${schema.approvals.createdAt} > now() - interval '24 hours'`,
+      ),
+    )
+    .limit(1);
+  if (recent) return { skipped: "already alerted in the last 24 hours" };
+
+  const [offer] = item.chosenOfferId ? await db.select().from(schema.offers).where(eq(schema.offers.id, item.chosenOfferId)) : [];
+  const merchant = offer?.merchant ?? "the store";
+  const now = round(input.now);
+  const user = await getDemoUser();
+  const payload: ApprovalPayload = {
+    goalId: item.goalId,
+    orders: [{ itemId: item.id, name: item.name, merchant, qty: item.qty, unit: now }],
+    orderTotal: round(now * item.qty),
+    subscriptions: [],
+    subscriptionMonthly: 0,
+    invoices: [],
+    shipTo: user.shipTo ?? undefined,
+    watch: { itemId: item.id, was: round(input.was), now, target: round(input.target) },
+  };
+  const token = randomBytes(24).toString("base64url");
+  const [approval] = await db
+    .insert(schema.approvals)
+    .values({
+      userId: user.id,
+      kind: "watch",
+      amount: String(payload.orderTotal),
+      title: `Price drop: ${item.name}`,
+      payload,
+      token: hash(token),
+      expiresAt: new Date(Date.now() + WATCH_LINK_TTL_MS),
+      step: "order",
+    })
+    .returning();
+
+  const link = `${origin}/approve/${token}`;
+  const saved = input.was - now;
+  const line = `• ${item.name} (${merchant}): *${money(now)}*${saved > 0 ? `, was ${money(input.was)}` : ""}, target ${money(input.target)}\n  ${link}`;
+  return { approvalId: approval.id, link, line };
+}
+
+/** Mark approvals as sent once their digest went out on WhatsApp. */
+export async function markApprovalsSent(ids: string[], messageSid: string | null) {
+  if (!ids.length) return;
+  const db = await getDb();
+  await db
+    .update(schema.approvals)
+    .set({ status: messageSid ? "sent" : "pending", whatsappMessageId: messageSid, updatedAt: new Date() })
+    .where(inArray(schema.approvals.id, ids));
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -348,9 +428,26 @@ export async function finalize(approvalId: string) {
     .returning();
   if (!done) return;
 
+  // Mark everything paid for as bought so it can never be charged again.
   const p = a.payload;
+  const paidIds = [...p.orders, ...p.subscriptions, ...p.invoices].map((l) => l.itemId);
+  if (paidIds.length) await db.update(schema.planItems).set({ purchasedAt: new Date() }).where(inArray(schema.planItems.id, paidIds));
+  if (p.watch) {
+    // Bought through a price-drop alert: it's no longer watched, and the offer shows the price actually paid.
+    const [item] = await db
+      .update(schema.planItems)
+      .set({ payType: "order", priority: "now", targetPrice: null })
+      .where(eq(schema.planItems.id, p.watch.itemId))
+      .returning();
+    if (item?.chosenOfferId)
+      await db
+        .update(schema.offers)
+        .set({ price: String(p.watch.now), wasPrice: String(p.watch.was) })
+        .where(eq(schema.offers.id, item.chosenOfferId));
+  }
+
   const lines = [
-    "*LifeCart*: paid ✅",
+    p.watch ? `*LifeCart*: bought at the lower price ✅ (saved ${money(Math.max(0, p.watch.was - p.watch.now))})` : "*LifeCart*: paid ✅",
     p.orders.length ? `Order: ${money(result.capturedAmount ?? p.orderTotal)} captured with PayPal` : null,
     p.subscriptions.length ? `Refills: ${money(p.subscriptionMonthly)}/mo subscription ${result.subscriptionStatus ? "active" : "set up"}` : null,
     result.invoices?.length ? `${result.invoices.length} service invoice${result.invoices.length > 1 ? "s" : ""} sent to your PayPal email` : null,

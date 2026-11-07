@@ -2,11 +2,13 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createCartApproval, startPayment } from "@/lib/approvals";
 import { createGoalSafely } from "@/lib/goals";
 import { allow, clientKey } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
 import { chooseOffer, setItemRail } from "@/lib/plans";
+import { checkWatches } from "@/lib/watch";
 
 const isId = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f-]{36}$/.test(s);
 
@@ -32,6 +34,32 @@ export async function selectOffer(itemId: string, offerId: string) {
 export async function moveToWatch(itemId: string, watch: boolean, target?: number) {
   if (!isId(itemId)) return { error: "Unknown item" };
   return setItemRail(itemId, watch, target);
+}
+
+export type WatchCheckState = { message: string; link?: string } | undefined;
+
+/** "Check prices now" (and the demo-only "simulate a price drop") on the Orders & watch page. */
+export async function runWatchCheck(simulateItemId?: string): Promise<WatchCheckState> {
+  if (simulateItemId !== undefined && !isId(simulateItemId)) return { message: "Unknown item" };
+  const h = await headers();
+  const rl = allow(`watch:${clientKey(h)}`, 20, 60 * 60_000);
+  if (!rl.ok) return { message: "Too many price checks. Try again in a few minutes." };
+  const { results, whatsapp } = await checkWatches(appOrigin(h), { simulateItemId });
+  revalidatePath("/orders");
+  if (!results.length) return { message: "Nothing is on price watch." };
+  const hits = results.filter((r) => r.status === "hit" && r.link);
+  const fixed = results.filter((r) => r.status === "retargeted").length;
+  const fixedNote = fixed ? ` Reset ${fixed} target(s) that were already above today's price.` : "";
+  if (!hits.length) {
+    const cooled = results.find((r) => r.status === "hit" && r.note);
+    return { message: `Checked ${results.length} item(s). ${cooled ? `${cooled.name}: ${cooled.note}.` : "No real price drop to your target yet."}${fixedNote}` };
+  }
+  const sent = whatsapp?.sent ? "One WhatsApp alert sent." : `WhatsApp not sent (${whatsapp && !whatsapp.sent ? whatsapp.reason : "unknown"}); use the link below.`;
+  const first = hits[0];
+  return {
+    message: `${hits.length} price drop(s): ${first.name} is now $${first.now?.toFixed(2)} (target $${first.target.toFixed(2)}). ${sent}${fixedNote}`,
+    link: first.link,
+  };
 }
 
 export type PayState = { error: string } | undefined;
