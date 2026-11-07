@@ -88,9 +88,24 @@ export type CaptureResult = {
   purchase_units?: { payments?: { captures?: { id: string; status: string; amount: { value: string; currency_code: string } }[] } }[];
 };
 
-/** Capture an approved order (toolkit `pay_order`). */
-export async function captureOrder(orderId: string) {
-  return paypal<CaptureResult>("pay_order", { id: orderId }, 30_000);
+/**
+ * Capture an approved order (toolkit `pay_order`).
+ * Note: the toolkit wraps PayPal's response as { status: "success" | "error", response: <PayPal JSON> }.
+ */
+export async function captureOrder(orderId: string): Promise<CaptureResult> {
+  const out = await paypal<{ status?: string; response?: CaptureResult } & CaptureResult>("pay_order", { id: orderId }, 30_000);
+  if (out.response) {
+    if (out.status === "error") throw new PayPalError("PayPal refused the capture", undefined, out.response);
+    return out.response;
+  }
+  return out;
+}
+
+/** Sum of COMPLETED captures on an order. */
+export function capturedTotal(o: CaptureResult) {
+  const caps = o.purchase_units?.flatMap((pu) => pu.payments?.captures ?? []) ?? [];
+  const done = caps.filter((c) => c.status === "COMPLETED");
+  return { total: Math.round(done.reduce((s, c) => s + Number(c.amount.value), 0) * 100) / 100, captureId: done[0]?.id };
 }
 
 export async function getOrder(orderId: string) {

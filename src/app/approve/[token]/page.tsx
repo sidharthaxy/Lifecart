@@ -52,6 +52,13 @@ async function Approval({ params, searchParams }: { params: Promise<{ token: str
   );
   if (a.status === "expired") return <Notice title="This link has expired" body="Approval links work for 30 minutes and only once.">{backToCheckout}</Notice>;
   if (a.status === "declined") return <Notice title="You declined this payment" body="Nothing was charged.">{backToCheckout}</Notice>;
+  if (a.step === "review" || a.step === "capturing")
+    return (
+      <Notice
+        title="We're checking this payment"
+        body="PayPal reported a different amount than you approved, so we stopped before anything else happened. Don't pay again; LifeCart will refund any difference."
+      />
+    );
 
   if (a.status === "paid") {
     const r = a.result ?? {};

@@ -4,7 +4,16 @@ import { getDb, schema } from "@/db";
 import type { ApprovalLine, ApprovalPayload, ApprovalResult } from "@/db/schema";
 import { getDemoUser } from "./demo-user";
 import { money } from "./format";
-import { captureOrder, createAndSendInvoice, createMonthlySubscription, createOrder, getSubscription, PayPalError } from "./paypal";
+import {
+  captureOrder,
+  capturedTotal,
+  createAndSendInvoice,
+  createMonthlySubscription,
+  createOrder,
+  getOrder,
+  getSubscription,
+  PayPalError,
+} from "./paypal";
 import { getPlan } from "./plans";
 import { sendWhatsApp, type SendResult } from "./whatsapp";
 
@@ -166,6 +175,13 @@ export async function startPayment(token: string, origin: string): Promise<{ red
 
   try {
     if (a.step === "order") {
+      // Never start a second order if the last one was already approved or paid at PayPal.
+      if (a.paypalOrderId) {
+        const existing = await getOrder(a.paypalOrderId).catch(() => null);
+        if (existing && (existing.status === "APPROVED" || existing.status === "COMPLETED")) {
+          return { redirect: await settleOrder(a, token, origin) };
+        }
+      }
       const o = await createOrder({
         lines: p.orders.map((l) => ({ name: `${l.name} (${l.merchant})`, qty: l.qty, unit: l.unit })),
         returnUrl: u.ret("order"),
@@ -210,28 +226,7 @@ export async function handleReturn(token: string, step: string, q: URLSearchPara
   if (step === "order" && a.step === "order") {
     // PayPal returns ?token=<orderId>. It must be the order we created for this approval.
     if (!a.paypalOrderId || q.get("token") !== a.paypalOrderId) return fail("PayPal returned an unexpected order.", "order");
-    const claimed = await claimStep(a.id, "order", "capturing");
-    if (!claimed) return u.page; // a parallel request is already capturing
-    try {
-      const cap = await captureOrder(a.paypalOrderId);
-      const captures = cap.purchase_units?.flatMap((pu) => pu.payments?.captures ?? []) ?? [];
-      const captured = round(captures.filter((c) => c.status === "COMPLETED").reduce((s, c) => s + Number(c.amount.value), 0));
-      if (cap.status !== "COMPLETED" || Math.abs(captured - a.payload.orderTotal) > 0.01) {
-        return fail(`Capture mismatch: status ${cap.status}, captured ${captured}, expected ${a.payload.orderTotal}`, "order");
-      }
-      const next = a.payload.subscriptions.length ? "subscription" : a.payload.invoices.length ? "invoices" : "done";
-      const result: ApprovalResult = { ...(a.result ?? {}), captureId: captures[0]?.id, capturedAmount: captured };
-      await claimStep(a.id, "capturing", next, { status: "approved", payerEmail: cap.payer?.email_address ?? null, result, error: null });
-      await db.insert(schema.payments).values({ approvalId: a.id, rail: "order", paypalId: a.paypalOrderId, amount: String(captured), status: "captured" });
-      if (next === "subscription") {
-        const s = await startPayment(token, origin);
-        return "redirect" in s ? s.redirect : `${u.page}?error=1`;
-      }
-      await finalize(a.id);
-      return u.page;
-    } catch (e) {
-      return fail(describe(e), "order");
-    }
+    return settleOrder(a, token, origin);
   }
 
   if (step === "subscription" && a.step === "subscription") {
@@ -255,6 +250,48 @@ export async function handleReturn(token: string, step: string, q: URLSearchPara
     }
   }
   return u.page;
+}
+
+/**
+ * Make sure the approval's PayPal order is captured exactly once, verified against PayPal itself, then move on.
+ * Safe to call again: an order that's already COMPLETED is never captured twice.
+ */
+async function settleOrder(a: Approval, token: string, origin: string): Promise<string> {
+  const u = urls(origin, token);
+  const db = await getDb();
+  const claimed = await claimStep(a.id, "order", "capturing");
+  if (!claimed) return u.page; // a parallel request is already settling this order
+  const back = async (msg: string, step = "order") => {
+    await db.update(schema.approvals).set({ step, error: msg, updatedAt: new Date() }).where(eq(schema.approvals.id, a.id));
+    return `${u.page}?error=1`;
+  };
+  try {
+    const id = a.paypalOrderId!;
+    let o = await getOrder(id);
+    if (o.status === "APPROVED") {
+      await captureOrder(id);
+      o = await getOrder(id); // source of truth, whatever the capture response looked like
+    }
+    if (o.status !== "COMPLETED") return back(`Order ${id} is ${o.status}`);
+    const { total, captureId } = capturedTotal(o);
+    if (Math.abs(total - a.payload.orderTotal) > 0.01) {
+      // Money moved but not the amount we approved: stop here (no retry button) and leave it for review/refund.
+      return back(`Capture mismatch on ${id}: captured ${total}, expected ${a.payload.orderTotal}`, "review");
+    }
+    const next = a.payload.subscriptions.length ? "subscription" : a.payload.invoices.length ? "invoices" : "done";
+    const result: ApprovalResult = { ...(a.result ?? {}), captureId, capturedAmount: total };
+    await claimStep(a.id, "capturing", next, { status: "approved", payerEmail: o.payer?.email_address ?? null, result, error: null });
+    await db.insert(schema.payments).values({ approvalId: a.id, rail: "order", paypalId: id, amount: String(total), status: "captured" });
+    if (next === "subscription") {
+      const fresh = await getApprovalByToken(token);
+      const s = fresh ? await startPayment(token, origin) : { error: "missing" };
+      return "redirect" in s ? s.redirect : `${u.page}?error=1`;
+    }
+    await finalize(a.id);
+    return u.page;
+  } catch (e) {
+    return back(describe(e));
+  }
 }
 
 /** Send service invoices (if any), mark paid, send the WhatsApp receipt. Idempotent. */
