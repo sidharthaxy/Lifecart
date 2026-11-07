@@ -26,8 +26,12 @@ export const goals = pgTable("goals", {
   prompt: text("prompt").notNull(),
   imageUrl: text("image_url"),
   budgetCap: money("budget_cap"),
-  /** Context the agent extracted, e.g. { schedule: "9-7 weekdays", home: "apartment" } */
-  context: jsonb("context").$type<Record<string, string>>(),
+  title: text("title"),
+  summary: text("summary"),
+  /** Short context chips the agent extracted, e.g. "Away 9 AM - 7 PM on weekdays". */
+  context: jsonb("context").$type<string[]>(),
+  /** Error message if the agent run failed. */
+  error: text("error"),
   /** Agent's step log shown in "What the agent did". */
   steps: jsonb("steps").$type<{ text: string; source?: string }[]>(),
   status: text("status").notNull().default("draft"),
@@ -39,7 +43,12 @@ export const planItems = pgTable("plan_items", {
   goalId: uuid("goal_id").notNull().references(() => goals.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   category: text("category").notNull(),
+  categoryWhy: text("category_why"),
   reason: text("reason").notNull(),
+  kind: text("kind").notNull().default("product"), // product | service
+  cadence: text("cadence").notNull().default("one_time"), // one_time | monthly
+  searchQuery: text("search_query"),
+  estimatedPrice: money("estimated_price"),
   qty: integer("qty").notNull().default(1),
   priority: priority("priority").notNull().default("now"),
   payType: payType("pay_type").notNull().default("order"),
@@ -62,6 +71,11 @@ export const offers = pgTable("offers", {
   currency: text("currency").notNull().default("USD"),
   shipping: money("shipping").default("0"),
   isSmb: boolean("is_smb").notNull().default(false),
+  availability: text("availability"),
+  /** Channel3 price status for this product, e.g. "typical", "low", "high". */
+  priceStatus: text("price_status"),
+  stats: jsonb("stats").$type<{ min?: number; max?: number; mean?: number; current?: number }>(),
+  rank: integer("rank").notNull().default(0),
   couponId: uuid("coupon_id"),
   source: text("source").notNull().default("seed"),
 });
