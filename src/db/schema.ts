@@ -28,7 +28,14 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   name: text("name").notNull().default(""),
+  /** WhatsApp number in E.164 (+15551234567). Alerts go here only once verified. */
   phone: text("phone"),
+  phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
+  /** Number being verified, and its one-time code (hashed): 10 minutes, 5 tries. */
+  pendingPhone: text("pending_phone"),
+  phoneCodeHash: text("phone_code_hash"),
+  phoneCodeExpiresAt: timestamp("phone_code_expires_at", { withTimezone: true }),
+  phoneCodeAttempts: integer("phone_code_attempts").notNull().default(0),
   whatsappOptIn: boolean("whatsapp_opt_in").notNull().default(false),
   paypalPayerId: text("paypal_payer_id"),
   shipTo: text("ship_to"),

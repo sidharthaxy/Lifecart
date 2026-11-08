@@ -9,7 +9,6 @@ import type { BudgetStatus } from "@/lib/budget";
 type Props = {
   onboarding?: boolean;
   user: { name: string; email: string; monthlyBudget: number | null; budgetDay: number; shipTo: string | null; prefs: UserPrefs };
-  demoPhone: string | null;
   /** This budget month so far (profile only). */
   budgetNow?: BudgetStatus;
 };
@@ -62,7 +61,7 @@ function Toggle({ name, label, hint, defaultChecked }: { name: string; label: st
 
 const field = "min-h-11 rounded-[10px] border border-input bg-[#FBFCFD] px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
-export function ProfileForm({ onboarding, user, demoPhone, budgetNow }: Props) {
+export function ProfileForm({ onboarding, user, budgetNow }: Props) {
   const [state, action, pending] = useActionState<ProfileState, FormData>(saveProfile, undefined);
   const p = user.prefs;
 
@@ -86,11 +85,6 @@ export function ProfileForm({ onboarding, user, demoPhone, budgetNow }: Props) {
             Ship orders to
             <input name="shipTo" maxLength={120} defaultValue={user.shipTo ?? ""} autoComplete="street-address" placeholder="City and ZIP, e.g. Austin, TX 78701" className={field} />
             <span className="text-xs font-normal text-muted-foreground">PayPal uses the address saved in your PayPal account at checkout.</span>
-          </label>
-          <label className="flex flex-col gap-1.5 text-sm font-semibold">
-            WhatsApp number
-            <input value={demoPhone ? `${demoPhone} (LifeCart demo line)` : "Not available yet"} readOnly disabled className={`${field} cursor-not-allowed bg-muted text-muted-foreground`} />
-            <span className="text-xs font-normal text-muted-foreground">During the hackathon every alert goes to one demo WhatsApp line. Your own number comes later.</span>
           </label>
         </div>
       </section>

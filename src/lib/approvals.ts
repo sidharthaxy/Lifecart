@@ -15,7 +15,7 @@ import {
   PayPalError,
 } from "./paypal";
 import { getPlan } from "./plans";
-import { sendWhatsApp, type SendResult } from "./whatsapp";
+import { alertNumber, sendWhatsApp, type SendResult } from "./whatsapp";
 
 /**
  * Human-in-the-loop payment approvals.
@@ -135,7 +135,7 @@ export async function createCartApproval(
     .join("\n");
 
   if (!opts.notify) return { token, link, message, whatsapp: null };
-  const whatsapp = await sendWhatsApp(message);
+  const whatsapp = await sendWhatsApp(message, alertNumber(user));
   await db
     .update(schema.approvals)
     .set({ status: whatsapp.sent ? "sent" : "pending", whatsappMessageId: whatsapp.sent ? whatsapp.sid : null, updatedAt: new Date() })
@@ -483,7 +483,7 @@ export async function finalize(approvalId: string) {
         result.invoices?.length ? `${result.invoices.length} service invoice${result.invoices.length > 1 ? "s" : ""} sent to your PayPal email` : null,
         "Your receipt is in Orders & watch on LifeCart.",
       ].filter(Boolean);
-  await sendWhatsApp(lines.join("\n"));
+  await sendWhatsApp(lines.join("\n"), alertNumber(await getUserById(a.userId)));
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -551,7 +551,7 @@ export async function createBillApproval(
   const link = `${origin}/approve/${token}`;
   if (!opts.notify) return { token, link, whatsapp: null };
 
-  const whatsapp = await sendWhatsApp(opts.message ? opts.message(link) : `LifeCart: bills due. Pay with PayPal: ${link}`);
+  const whatsapp = await sendWhatsApp(opts.message ? opts.message(link) : `LifeCart: bills due. Pay with PayPal: ${link}`, alertNumber(user));
   await db
     .update(schema.approvals)
     .set({ status: whatsapp.sent ? "sent" : "pending", whatsappMessageId: whatsapp.sent ? whatsapp.sid : null, updatedAt: new Date() })

@@ -80,6 +80,34 @@ export async function saveProfile(_prev: ProfileState, form: FormData): Promise<
   return { ok: true };
 }
 
+// ---- WhatsApp number (Profile / Welcome) -----------------------------------------------------------
+
+export type PhoneState = { step: "number" | "code" | "done"; masked?: string; error?: string; info?: string } | undefined;
+
+/** One form, three intents: send a code to a number, check the code, or remove the number. */
+export async function phoneStep(prev: PhoneState, form: FormData): Promise<PhoneState> {
+  const user = await getSessionUser();
+  if (!user) return { step: "number", error: "Please sign in again." };
+  const { confirmPhone, removePhone, startPhoneVerification } = await import("@/lib/phone");
+  const intent = String(form.get("intent") ?? "");
+
+  if (intent === "remove") {
+    await removePhone(user.id);
+    revalidatePath("/profile");
+    return { step: "number", info: "Number removed. You won't get WhatsApp alerts." };
+  }
+  if (intent === "change") return { step: "number" };
+  if (intent === "send" || intent === "resend") {
+    const res = await startPhoneVerification(user.id, form.get("phone") ?? "");
+    if ("error" in res) return { step: intent === "resend" ? "code" : "number", masked: prev?.masked, error: res.error };
+    return { step: "code", masked: res.masked, info: intent === "resend" ? "We sent a new code." : undefined };
+  }
+  const res = await confirmPhone(user.id, form.get("code"));
+  if ("error" in res) return { step: "code", masked: prev?.masked, error: res.error };
+  revalidatePath("/profile");
+  return { step: "done", masked: res.masked };
+}
+
 /** Delete the account and everything in it (blocked while refills are active). */
 export async function deleteMyAccount(): Promise<{ error?: string }> {
   const user = await getSessionUser();

@@ -29,6 +29,11 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 
 ### Accounts
 - **Passwordless sign-in.** Enter your email and get a 6-digit code. Existing accounts go straight in; new accounts answer a few welcome questions (name, monthly shopping budget, where to ship, alert preferences).
+- **Your own WhatsApp number, verified.**
+  - **Joining:** an "Open WhatsApp" button sends the sandbox join message.
+  - **Verifying:** LifeCart sends a 6-digit code to your number on WhatsApp, and you type it back. This proves the number is yours and that the join worked.
+  - **Who gets alerts:** only verified numbers. A number that hasn't joined gets a clear "send the join message first" instead of a code that never arrives.
+  - **Code rules:** codes are stored hashed, expire in 10 minutes, allow 5 tries, and are rate limited.
 - **Profile and settings.** Everything you've shared in one place: monthly budget, "offer to pay in parts when I'm over budget", WhatsApp alert switches, connected accounts, sign out, and sign out on all devices.
 - **Fresh start.** Every account starts empty, and you only ever see your own plans, bills and payments.
 - **A monthly shopping budget that tracks spending.** You choose the amount and the day your budget month starts (1st to 28th, for example the day after payday).
@@ -98,7 +103,7 @@ Payments already made always stay on the Money page (until the account is delete
 |---|---|
 | The agent plans from **real product listings** and **real 90-day price history** (Channel3) | The order isn't placed with the retailer, so nothing ships |
 | **Real PayPal sandbox payments**: orders captured, subscriptions approved and cancelled, invoices sent, refunds issued, each verified with PayPal | Payments go to **LifeCart's own sandbox merchant account**; they aren't passed on to the store or the biller |
-| **Real WhatsApp messages** (Twilio sandbox) and **real email sign-in codes** | WhatsApp alerts go to one shared demo number, not each user's own phone |
+| **Real WhatsApp messages** to each user's own verified number (Twilio sandbox) and **real email sign-in codes** | WhatsApp uses Twilio's free sandbox: each user sends a join message first, and it lapses after ~3 days without messages |
 | Live reconciliation of every payment against PayPal | PayPal webhooks (status is checked live on page view instead) |
 
 **In production, money would reach the store in one of three ways** (see [Roadmap](#13-roadmap)):
@@ -370,7 +375,7 @@ npm run dev                  # http://localhost:3000
 - `GROQ_API_KEY`
 - `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID`
 - `CHANNEL3_API_KEY`
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `DEMO_WHATSAPP_TO`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `TWILIO_SANDBOX_JOIN` (e.g. "join drop-particles")
 - `GMAIL_USER`, `GMAIL_APP_PASSWORD`
 - `DATABASE_URL` (blank means local PGlite)
 
@@ -444,7 +449,7 @@ scripts/                  test and dev tools
 
 1. **Pay the store, not LifeCart.** Use agent checkout with retailers that support it (PayPal agentic commerce, agent-ready Shopify stores), PayPal multiparty payments so one approval pays each independent store, and a hand-off link for retailers like Amazon.
 2. **Pay the biller.** Forward bill payments with PayPal Payouts to the biller's PayPal account, or through a bill-pay network.
-3. **Each user's own WhatsApp number**, verified with a code, instead of the shared demo line.
+3. **A registered WhatsApp Business sender** (Twilio + Meta Business) with approved message templates, so anyone can get alerts without the sandbox join step.
 4. **PayPal webhooks** for capture, refund and subscription events, instead of checking live on page view.
 5. **Rules for small refills**, such as "auto-approve refills under $40", within limits you set.
 6. **Test and apply coupon codes automatically** when the order is placed with the store (most coupon sites hide full codes behind a click, so today LifeCart links to them).

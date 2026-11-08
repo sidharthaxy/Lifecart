@@ -36,6 +36,8 @@ export const env = {
   twilioSid: read("TWILIO_ACCOUNT_SID"),
   twilioToken: read("TWILIO_AUTH_TOKEN"),
   twilioFrom: read("TWILIO_FROM"),
+  /** The sandbox opt-in phrase, e.g. "join drop-particles" (Twilio console, WhatsApp sandbox page). */
+  twilioSandboxJoin: read("TWILIO_SANDBOX_JOIN"),
 
   gmailUser: read("GMAIL_USER"),
   gmailAppPassword: read("GMAIL_APP_PASSWORD")?.replace(/\s+/g, ""),
@@ -92,9 +94,9 @@ export function integrations(): IntegrationStatus[] {
             TWILIO_ACCOUNT_SID: env.twilioSid,
             TWILIO_AUTH_TOKEN: env.twilioToken,
             TWILIO_FROM: env.twilioFrom,
-            DEMO_WHATSAPP_TO: env.demoWhatsappTo,
+            TWILIO_SANDBOX_JOIN: env.twilioSandboxJoin,
           },
-          "Messages appear in the on-screen phone preview instead.",
+          "No WhatsApp alerts are sent; users can't verify a number.",
         ),
     check("channel3", "Channel3 products", { CHANNEL3_API_KEY: env.channel3ApiKey }, "Offers come from the seeded catalog."),
     check("kernel", "Kernel browser", { KERNEL_API_KEY: env.kernelApiKey }, "Coupons come from the seeded coupon list."),

@@ -3,7 +3,8 @@ import { getDb, schema } from "@/db";
 import { createWatchApproval, markApprovalsSent } from "./approvals";
 import { currentPrice } from "./channel3";
 import { num } from "./format";
-import { sendWhatsApp, type SendResult } from "./whatsapp";
+import { alertNumber, sendWhatsApp, type SendResult } from "./whatsapp";
+import { getUserById } from "./users";
 
 /**
  * Price watch. For every watched, unbought product: look up today's price at its store (Channel3) and record it.
@@ -105,7 +106,7 @@ export async function checkWatches(origin: string, opts: { userId: string; simul
       "",
       "Tap a link to buy with PayPal. Links are valid for 6 hours.",
     ].join("\n");
-    whatsapp = await sendWhatsApp(msg);
+    whatsapp = await sendWhatsApp(msg, alertNumber(await getUserById(opts.userId)));
     await markApprovalsSent(
       alerts.map((a) => a.approvalId),
       whatsapp.sent ? whatsapp.sid : null,

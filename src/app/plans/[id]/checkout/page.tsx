@@ -11,7 +11,7 @@ import { money } from "@/lib/format";
 import { budgetStatus } from "@/lib/budget";
 import { getPlan } from "@/lib/plans";
 import type { ItemView } from "@/lib/totals";
-import { maskedPhone } from "@/lib/whatsapp";
+import { alertNumber, maskedPhone } from "@/lib/whatsapp";
 
 function Lane({ title, sub, color, children }: { title: string; sub: string; color: string; children: React.ReactNode }) {
   return (
@@ -63,7 +63,7 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
   const subTotal = subs.reduce((a, i) => a + price(i), 0);
   const dueNow = orderTotal + subTotal;
   const belowList = unpaid.filter((i) => i.payType !== "watch" && i.offer?.wasPrice).reduce((a, i) => a + (i.offer!.wasPrice! - i.offer!.price) * i.qty, 0);
-  const phone = maskedPhone();
+  const phone = maskedPhone(alertNumber(user));
   // Compare with what's LEFT of this month's shopping budget, not the full amount.
   const b = await budgetStatus(user);
   const budget = b.left != null ? Math.max(0, b.left) : null;
