@@ -16,4 +16,6 @@ if (!parsed.success) {
   process.exit(1);
 }
 const out = await tool.execute(parsed.data, { toolCallId: "dev", messages: [] });
-console.log(typeof out === "string" ? out.slice(0, 2500) : JSON.stringify(out, null, 1).slice(0, 2500));
+const full = process.env.FULL === "1";
+const text = typeof out === "string" ? out : JSON.stringify(out);
+console.log(full ? text : text.slice(0, 2500));
