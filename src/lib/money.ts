@@ -1,16 +1,16 @@
-import { desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { listBills } from "./bills";
 import { num } from "./format";
-import { getCapture, getInvoiceStatus, getSubscriptionBilling, listCaptures } from "./paypal";
+import { getCapture, getInvoiceStatus, getSubscriptionBilling } from "./paypal";
 
 /**
  * Money ledger: everything LifeCart moved through PayPal, reconciled against PayPal itself.
  *  - every capture LifeCart made -> live capture status (COMPLETED / REFUNDED / PARTIALLY_REFUNDED) + amount check
  *  - refills subscriptions -> PayPal's own last-payment record (what was actually charged)
  *  - service invoices -> live invoice status (counted once PAID)
- *  - the transaction report -> captures PayPal knows about that LifeCart doesn't (e.g. the Nov 8 duplicates)
- * Results are cached for 5 minutes and PayPal lookups are capped per refresh.
+ * Per user: cached for 5 minutes, PayPal lookups capped per refresh. (The merchant-wide transaction report is NOT
+ * shown here: it would include other customers' payments.)
  */
 
 export type LedgerRow = {
@@ -18,7 +18,7 @@ export type LedgerRow = {
   date: string;
   title: string;
   detail: string;
-  source: "Plan" | "Bill" | "Price drop" | "Refills" | "Service" | "PayPal only";
+  source: "Plan" | "Bill" | "Price drop" | "Refills" | "Service";
   status: string;
   amount: number;
   /** What counts toward spend after refunds (e.g. 0 for a refunded capture, or an unpaid invoice). */
@@ -38,35 +38,33 @@ export type MoneyView = {
   events: CalendarEvent[];
   checkedAt: string;
   paypalLookups: number;
-  reportNote: string | null;
 };
 
 const MAX_LOOKUPS = 30;
 const TTL_MS = 5 * 60_000;
-let cache: { at: number; value: MoneyView } | null = null;
-export const clearMoneyCache = () => {
-  cache = null;
+const cache = new Map<string, { at: number; value: MoneyView }>();
+export const clearMoneyCache = (userId: string) => {
+  cache.delete(userId);
 };
 
 const round = (n: number) => Math.round(n * 100) / 100;
 const day = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
 
-export async function getMoney(): Promise<MoneyView> {
-  if (cache && Date.now() - cache.at < TTL_MS) return cache.value;
+export async function getMoney(userId: string): Promise<MoneyView> {
+  const hit = cache.get(userId);
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
   const db = await getDb();
   let lookups = 0;
   const can = () => lookups < MAX_LOOKUPS;
   const rows: LedgerRow[] = [];
   const events: CalendarEvent[] = [];
-  const knownCaptures = new Set<string>();
 
   // 1. Captures LifeCart made (plan checkouts, bills, price-drop buys)
   const captured = await db
     .select()
     .from(schema.approvals)
-    .where(or(eq(schema.approvals.status, "paid"), sql`${schema.approvals.result}->>'captureId' is not null`))
+    .where(and(eq(schema.approvals.userId, userId), or(eq(schema.approvals.status, "paid"), sql`${schema.approvals.result}->>'captureId' is not null`)))
     .orderBy(desc(schema.approvals.updatedAt));
-  for (const a of captured) if (a.result?.captureId) knownCaptures.add(a.result.captureId);
   await mapLimit(captured, 6, async (a) => {
     const capId = a.result?.captureId;
     if (!capId) return;
@@ -129,7 +127,7 @@ export async function getMoney(): Promise<MoneyView> {
     .select({ p: schema.payments, a: schema.approvals })
     .from(schema.payments)
     .innerJoin(schema.approvals, eq(schema.approvals.id, schema.payments.approvalId))
-    .where(inArray(schema.payments.rail, ["subscription", "invoice"]))
+    .where(and(eq(schema.approvals.userId, userId), inArray(schema.payments.rail, ["subscription", "invoice"])))
     .orderBy(desc(schema.payments.createdAt));
   await mapLimit(managed, 6, async ({ p, a }) => {
     if (!p.paypalId) return;
@@ -196,60 +194,8 @@ export async function getMoney(): Promise<MoneyView> {
     }
   });
 
-  // 4. Captures PayPal knows about that LifeCart doesn't (transaction report; lags a few hours in sandbox)
-  let reportNote: string | null = null;
-  if (can()) {
-    lookups++;
-    try {
-      const end = new Date();
-      const start = new Date(end.getTime() - 30 * 86_400_000);
-      const iso = (d: Date) => d.toISOString().slice(0, 19) + "Z";
-      const report = await listCaptures(iso(start), iso(end));
-      const unknown = report.filter((t) => t.code === "T0006" && !knownCaptures.has(t.id));
-      await mapLimit(unknown, 6, async (t) => {
-        let status = t.status === "S" ? "Completed" : t.status;
-        let refunded = 0;
-        if (can()) {
-          lookups++;
-          try {
-            const c = await getCapture(t.id);
-            status = c.status === "REFUNDED" ? "Refunded" : c.status === "COMPLETED" ? "Completed" : c.status;
-            if (c.status === "REFUNDED") refunded = t.amount;
-          } catch {
-            // keep report status
-          }
-        }
-        rows.push({
-          id: `pp-${t.id}`,
-          date: t.at,
-          title: "Payment found only in PayPal",
-          detail: refunded ? "Duplicate charge, refunded" : "Not linked to a LifeCart checkout",
-          source: "PayPal only",
-          status,
-          amount: t.amount,
-          counted: round(t.amount - refunded),
-          refunded,
-          saved: 0,
-          paypalId: t.id,
-          verified: "Verified with PayPal",
-        });
-        events.push({
-          id: `pp-${t.id}`,
-          name: `${refunded ? "Refunded" : "Paid"} ${fmt(t.amount)} · found in PayPal`,
-          startDate: day(t.at),
-          endDate: day(t.at),
-          resourceId: refunded ? "refunds" : "payments",
-          allDay: true,
-        });
-      });
-      reportNote = "PayPal's transaction report can lag a few hours in the sandbox; live statuses above are checked directly.";
-    } catch {
-      reportNote = "PayPal's transaction report isn't available right now.";
-    }
-  }
-
   // Bills: due dates on the calendar, monthly total in "recurring"
-  const bills = await listBills();
+  const bills = await listBills(userId);
   for (const b of bills) {
     events.push({
       id: `bill-${b.id}`,
@@ -265,7 +211,7 @@ export async function getMoney(): Promise<MoneyView> {
   const spent = round(rows.reduce((s, r) => s + r.counted, 0));
   const refillsMonthly = round(rows.filter((r) => r.source === "Refills" && r.status.toUpperCase() === "ACTIVE").reduce((s, r) => s + r.amount, 0));
   const billsMonthly = round(bills.reduce((s, b) => s + b.amount, 0));
-  const order: LedgerRow["source"][] = ["Plan", "Bill", "Price drop", "Refills", "Service", "PayPal only"];
+  const order: LedgerRow["source"][] = ["Plan", "Bill", "Price drop", "Refills", "Service"];
   const bySource = order
     .map((source) => ({ source, amount: round(rows.filter((r) => r.source === source).reduce((s, r) => s + r.counted, 0)) }))
     .filter((x) => x.amount > 0)
@@ -285,9 +231,8 @@ export async function getMoney(): Promise<MoneyView> {
     events,
     checkedAt: new Date().toISOString(),
     paypalLookups: lookups,
-    reportNote,
   };
-  cache = { at: Date.now(), value };
+  cache.set(userId, { at: Date.now(), value });
   return value;
 }
 

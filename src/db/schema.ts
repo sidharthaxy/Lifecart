@@ -12,13 +12,53 @@ const id = () => uuid("id").primaryKey().defaultRandom();
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const money = (name: string) => numeric(name, { precision: 12, scale: 2 });
 
+export type UserPrefs = {
+  /** If a checkout is over the monthly shopping budget, suggest PayPal Pay Later (Pay in 4). */
+  payInParts?: boolean;
+  /** WhatsApp alerts (they go to the shared demo number during the hackathon). */
+  alertPriceDrops?: boolean;
+  alertBills?: boolean;
+  /** Shows sample bills and the "simulate a price drop" button, for recording demos. */
+  demoTools?: boolean;
+};
+
 export const users = pgTable("users", {
   id: id(),
-  name: text("name").notNull(),
+  /** Lower-cased, verified by a one-time email code. */
+  email: text("email").notNull().unique(),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  name: text("name").notNull().default(""),
   phone: text("phone"),
   whatsappOptIn: boolean("whatsapp_opt_in").notNull().default(false),
   paypalPayerId: text("paypal_payer_id"),
   shipTo: text("ship_to"),
+  /** Monthly shopping budget (the default budget for new plans). */
+  monthlyBudget: money("monthly_budget"),
+  prefs: jsonb("prefs").$type<UserPrefs>().notNull().default({}),
+  /** Set when the welcome questions are done; until then the app sends you to /welcome. */
+  onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** One-time sign-in codes (hashed). Single use, 10 minutes, 5 attempts. */
+export const authCodes = pgTable("auth_codes", {
+  id: id(),
+  email: text("email").notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Database sessions: the cookie holds a random token; only its SHA-256 is stored, so sessions can be revoked. */
+export const sessions = pgTable("sessions", {
+  id: id(),
+  tokenHash: text("token_hash").notNull().unique(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: createdAt(),
 });
 

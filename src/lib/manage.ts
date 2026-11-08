@@ -21,13 +21,13 @@ export type ManagedItem = {
   createdAt: Date;
 };
 
-export async function listManaged(): Promise<ManagedItem[]> {
+export async function listManaged(userId: string): Promise<ManagedItem[]> {
   const db = await getDb();
   const rows = await db
     .select({ p: schema.payments, a: schema.approvals })
     .from(schema.payments)
     .innerJoin(schema.approvals, eq(schema.approvals.id, schema.payments.approvalId))
-    .where(inArray(schema.payments.rail, ["subscription", "invoice"]))
+    .where(and(eq(schema.approvals.userId, userId), inArray(schema.payments.rail, ["subscription", "invoice"])))
     .orderBy(desc(schema.payments.createdAt))
     .limit(30);
 
@@ -62,12 +62,14 @@ export async function listManaged(): Promise<ManagedItem[]> {
 }
 
 /** Cancel a refills subscription (toolkit cancel_subscription), then record PayPal's resulting status. */
-export async function cancelRefills(paymentId: string): Promise<{ status: string } | { error: string }> {
+export async function cancelRefills(paymentId: string, userId: string): Promise<{ status: string } | { error: string }> {
   const db = await getDb();
-  const [p] = await db
-    .select()
+  const [row] = await db
+    .select({ p: schema.payments })
     .from(schema.payments)
-    .where(and(eq(schema.payments.id, paymentId), eq(schema.payments.rail, "subscription")));
+    .innerJoin(schema.approvals, eq(schema.approvals.id, schema.payments.approvalId))
+    .where(and(eq(schema.payments.id, paymentId), eq(schema.payments.rail, "subscription"), eq(schema.approvals.userId, userId)));
+  const p = row?.p;
   if (!p?.paypalId) return { error: "Subscription not found." };
   if (["cancelled", "canceled"].includes(p.status.toLowerCase())) return { status: "cancelled" };
   try {

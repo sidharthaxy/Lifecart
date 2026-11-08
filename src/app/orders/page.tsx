@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { connection } from "next/server";
-import { desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { BellRing, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { CheckPricesButton, SimulateDropButton } from "@/components/watch/watch-controls";
 import { getDb, schema } from "@/db";
+import { requireUser } from "@/lib/auth/session";
 import { money, num } from "@/lib/format";
 import { listWatched } from "@/lib/watch";
 import { listManaged } from "@/lib/manage";
@@ -18,14 +18,14 @@ const ago = (d: Date | null) => {
 };
 
 async function Watchlist() {
-  await connection();
-  const rows = await listWatched();
+  const user = await requireUser();
+  const rows = await listWatched(user.id);
   const db = await getDb();
   const alerts = rows.length
     ? await db
         .select()
         .from(schema.approvals)
-        .where(inArray(schema.approvals.status, ["pending", "sent"]))
+        .where(and(eq(schema.approvals.userId, user.id), inArray(schema.approvals.status, ["pending", "sent"])))
         .orderBy(desc(schema.approvals.createdAt))
     : [];
   const alertFor = (itemId: string) =>
@@ -87,9 +87,9 @@ async function Watchlist() {
                     <BellRing className="size-4" aria-hidden /> Alert sent {ago(alert.createdAt)}. The buy link is valid until{" "}
                     {alert.expiresAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}.
                   </p>
-                ) : (
+                ) : user.prefs.demoTools ? (
                   <SimulateDropButton itemId={item.id} />
-                )}
+                ) : null}
               </li>
             );
           })}
@@ -110,8 +110,8 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 async function Managed() {
-  await connection();
-  const items = await listManaged();
+  const user = await requireUser();
+  const items = await listManaged(user.id);
   if (!items.length) return null;
   return (
     <section aria-labelledby="managed" className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
@@ -152,13 +152,13 @@ async function Managed() {
 }
 
 async function Payments() {
-  await connection();
+  const user = await requireUser();
   const db = await getDb();
   // Finished checkouts, plus any approval where money was captured even if the later steps were abandoned.
   const paid = await db
     .select()
     .from(schema.approvals)
-    .where(or(eq(schema.approvals.status, "paid"), sql`${schema.approvals.result}->>'captureId' is not null`))
+    .where(and(eq(schema.approvals.userId, user.id), or(eq(schema.approvals.status, "paid"), sql`${schema.approvals.result}->>'captureId' is not null`)))
     .orderBy(desc(schema.approvals.updatedAt))
     .limit(20);
   return (

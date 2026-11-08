@@ -1,8 +1,8 @@
 import { Suspense } from "react";
-import { connection } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { CheckCircle2, Droplet, Home, type LucideIcon, Receipt, Smartphone, Tv, Wifi, Zap } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
-import { AddBillForm, PayBillsButton, PlanPicker, RemindButton, SwitchPlanButton } from "@/components/bills/bill-controls";
+import { AddBillForm, PayBillsButton, PlanPicker, RemindButton, SampleBillsButton, SwitchPlanButton } from "@/components/bills/bill-controls";
 import { insights, listBills, type BillView } from "@/lib/bills";
 import { money } from "@/lib/format";
 import { maskedPhone } from "@/lib/whatsapp";
@@ -19,8 +19,19 @@ function dueLabel(b: BillView) {
 }
 
 async function BillsHub() {
-  await connection();
-  const bills = await listBills();
+  const user = await requireUser();
+  const bills = await listBills(user.id);
+  const demo = Boolean(user.prefs.demoTools);
+  if (!bills.length)
+    return (
+      <section className="flex flex-col items-start gap-3 rounded-2xl border border-border bg-card p-8">
+        <h2 className="text-xl font-bold">No bills yet</h2>
+        <p className="max-w-xl text-muted-foreground">
+          Add rent, electricity, internet, a phone top-up or a subscription with <strong>Add a bill</strong> above. We&apos;ll remind you on WhatsApp before each one is due, and you pay with PayPal.
+        </p>
+        {demo && <SampleBillsButton />}
+      </section>
+    );
   const unpaid = bills.filter((b) => !b.paid);
   const next30 = unpaid.filter((b) => b.daysLeft <= 30);
   const dueWeek = unpaid.filter((b) => b.daysLeft <= 7);
@@ -112,7 +123,7 @@ async function BillsHub() {
             })}
           </ul>
           <p className="m-0 border-t border-border px-6 py-3 text-xs text-muted-foreground">
-            Billers here are demo payees in the PayPal sandbox; the PayPal payment itself is real (sandbox). Rent would go to your landlord&apos;s PayPal account.
+            <strong className="text-foreground">Where the money goes:</strong> in this sandbox version, bill payments are paid to LifeCart&apos;s PayPal account and recorded against the bill. Sending the money on to the biller (for example with PayPal Payouts to their PayPal email) isn&apos;t connected yet, so nothing reaches the payee.
           </p>
         </section>
 
@@ -153,7 +164,14 @@ async function BillsHub() {
             <p className="text-sm text-muted-foreground">
               Bills due within 3 days arrive as one WhatsApp message{phoneNum ? ` to ${phoneNum}` : ""} with a single link to pay them with PayPal. At most once a day per bill.
             </p>
-            <RemindButton />
+            {demo ? (
+              <div className="flex flex-col gap-3">
+                <RemindButton />
+                <SampleBillsButton />
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted-foreground">Reminders go out automatically once a day.</p>
+            )}
           </section>
         </aside>
       </div>

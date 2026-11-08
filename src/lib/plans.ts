@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { isIndependent } from "./channel3";
 import { num } from "./format";
@@ -10,9 +10,9 @@ export type { ItemView, OfferView };
 
 export type PlanView = Awaited<ReturnType<typeof getPlan>>;
 
-export async function getPlan(goalId: string) {
+export async function getPlan(goalId: string, userId: string) {
   const db = await getDb();
-  const [goal] = await db.select().from(schema.goals).where(eq(schema.goals.id, goalId));
+  const [goal] = await db.select().from(schema.goals).where(and(eq(schema.goals.id, goalId), eq(schema.goals.userId, userId)));
   if (!goal) return null;
 
   const items = await db.select().from(schema.planItems).where(eq(schema.planItems.goalId, goalId)).orderBy(asc(schema.planItems.sort));
@@ -84,15 +84,35 @@ export async function getPlan(goalId: string) {
   return { goal: { ...goal, budgetCap: num(goal.budgetCap) }, items: itemViews, totals: computeTotals(itemViews) };
 }
 
-/** Recent plans for the landing page. */
-export async function listPlans(limit = 5) {
+/** Your plans, newest first. */
+export async function listPlans(userId: string, limit = 5) {
   const db = await getDb();
-  const goals = await db.select().from(schema.goals).orderBy(schema.goals.createdAt).limit(50);
-  return goals.reverse().slice(0, limit);
+  return db.select().from(schema.goals).where(eq(schema.goals.userId, userId)).orderBy(desc(schema.goals.createdAt)).limit(limit);
 }
 
-export async function chooseOffer(itemId: string, offerId: string) {
+/** Does this plan belong to this user? (API routes and actions check before touching a plan.) */
+export async function ownsGoal(goalId: string, userId: string) {
   const db = await getDb();
+  const [g] = await db.select({ id: schema.goals.id }).from(schema.goals).where(and(eq(schema.goals.id, goalId), eq(schema.goals.userId, userId)));
+  return Boolean(g);
+}
+
+/** The plan item, only if it belongs to one of this user's plans. */
+async function ownedItem(itemId: string, userId: string) {
+  const db = await getDb();
+  const [row] = await db
+    .select({ item: schema.planItems })
+    .from(schema.planItems)
+    .innerJoin(schema.goals, eq(schema.goals.id, schema.planItems.goalId))
+    .where(and(eq(schema.planItems.id, itemId), eq(schema.goals.userId, userId)));
+  return row?.item ?? null;
+}
+
+export async function chooseOffer(itemId: string, offerId: string, userId: string) {
+  if (!(await ownedItem(itemId, userId))) return;
+  const db = await getDb();
+  const [offer] = await db.select({ id: schema.offers.id }).from(schema.offers).where(and(eq(schema.offers.id, offerId), eq(schema.offers.planItemId, itemId)));
+  if (!offer) return;
   await db.update(schema.planItems).set({ chosenOfferId: offerId }).where(eq(schema.planItems.id, itemId));
 }
 
@@ -100,9 +120,9 @@ export async function chooseOffer(itemId: string, offerId: string) {
  * Move a product between "buy now" and "price watch". Services can't be watched.
  * Default target: the 90-day low if it's below today's price, else 15% off today's price.
  */
-export async function setItemRail(itemId: string, watch: boolean, target?: number) {
+export async function setItemRail(itemId: string, watch: boolean, target: number | undefined, userId: string) {
   const db = await getDb();
-  const [item] = await db.select().from(schema.planItems).where(eq(schema.planItems.id, itemId));
+  const item = await ownedItem(itemId, userId);
   if (!item) return { error: "Unknown item" };
   if (item.kind === "service") return { error: "Services are booked, not watched." };
   const [offer] = item.chosenOfferId ? await db.select().from(schema.offers).where(eq(schema.offers.id, item.chosenOfferId)) : [];

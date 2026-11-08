@@ -1,10 +1,10 @@
 import { Suspense } from "react";
-import { connection } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { integrations } from "@/lib/env";
 import { DAILY_CAPS, usageToday } from "@/lib/usage";
 
 async function StatusList() {
-  await connection(); // read env at request time, not build time
+  await requireUser(); // signed-in only; also makes this read env at request time
   const list = integrations();
   return (
     <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
@@ -34,7 +34,7 @@ async function StatusList() {
 }
 
 async function UsageList() {
-  await connection();
+  await requireUser();
   const rows = await usageToday();
   const providers = Object.keys(DAILY_CAPS) as (keyof typeof DAILY_CAPS)[];
   return (

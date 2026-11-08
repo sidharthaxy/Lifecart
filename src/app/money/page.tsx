@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { connection } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { MoneyLedger } from "@/components/money/money-ledger";
@@ -50,8 +50,8 @@ function SpendBySource({ data, total }: { data: { source: string; amount: number
 }
 
 async function MoneyBody() {
-  await connection();
-  const m = await getMoney();
+  const user = await requireUser();
+  const m = await getMoney(user.id);
   const t = m.totals;
   const checked = new Date(m.checkedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const verified = m.rows.filter((r) => r.verified === "Verified with PayPal").length;
@@ -89,7 +89,6 @@ async function MoneyBody() {
             </h2>
             <p className="text-sm text-muted-foreground">
               Each one is checked live with PayPal. Refunds, cancelled refills and unpaid invoices don&apos;t count as spent.
-              {m.reportNote ? ` ${m.reportNote}` : ""}
             </p>
           </div>
           <form action={refreshMoney}>

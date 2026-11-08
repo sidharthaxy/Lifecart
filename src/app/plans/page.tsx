@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { connection } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { ChevronRight } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { listPlans } from "@/lib/plans";
 
 async function PlanList() {
-  await connection();
-  const plans = await listPlans(50);
+  const user = await requireUser();
+  const plans = await listPlans(user.id, 50);
   if (!plans.length)
     return (
       <p className="text-muted-foreground">

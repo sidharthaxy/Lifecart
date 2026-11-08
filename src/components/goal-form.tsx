@@ -5,10 +5,10 @@ import { ArrowRight, Camera, Loader2, X } from "lucide-react";
 import { createGoal, type GoalFormState } from "@/app/actions";
 
 const EXAMPLES = [
-  "I leave for the office at 9 AM and get back at 7 PM. I want to get a golden retriever puppy.",
   "Moving into my first studio apartment next month, budget is tight.",
   "Starting to work from home full time.",
   "Our first baby is due in March.",
+  "I'm out 9 AM to 7 PM on weekdays and getting a golden retriever puppy.",
 ];
 
 /** Shrink photos in the browser so uploads stay small and fit the vision model limits. */
@@ -22,9 +22,9 @@ async function toSmallDataUrl(file: File): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-export function GoalForm() {
+export function GoalForm({ defaultBudget }: { defaultBudget?: number | null }) {
   const [state, action, pending] = useActionState<GoalFormState, FormData>(createGoal, undefined);
-  const [prompt, setPrompt] = useState(EXAMPLES[0]);
+  const [prompt, setPrompt] = useState("");
   const [photo, setPhoto] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -43,6 +43,7 @@ export function GoalForm() {
         rows={3}
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
+        placeholder="For example: I'm starting to work from home and need a proper desk setup."
         className="w-full resize-y rounded-xl border border-input bg-[#FBFCFD] px-4 py-3.5 text-[17px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       />
       <input type="hidden" name="photo" value={photo} />
@@ -78,11 +79,10 @@ export function GoalForm() {
         )}
         <div className="flex min-h-11 items-center gap-2 rounded-[10px] border border-input bg-card px-3">
           <label htmlFor="budget" className="text-sm text-muted-foreground">
-            Budget
+            Shopping budget
           </label>
           <span className="text-muted-foreground">$</span>
-          <input id="budget" name="budget" inputMode="decimal" defaultValue="1,000" className="w-20 bg-transparent font-semibold outline-none" />
-          <span className="text-[13px] text-muted-foreground">first month</span>
+          <input id="budget" name="budget" inputMode="decimal" defaultValue={defaultBudget ? defaultBudget.toLocaleString("en-US") : ""} placeholder="800" className="w-20 bg-transparent font-semibold outline-none" />
         </div>
         <span className="flex-1" />
         <button
@@ -104,7 +104,7 @@ export function GoalForm() {
 
       <div className="flex flex-wrap gap-2 border-t border-[#EEF1F5] pt-1">
         <span className="pr-1 pt-2.5 text-[13px] text-muted-foreground">Try:</span>
-        {EXAMPLES.slice(1).map((ex) => (
+        {EXAMPLES.map((ex) => (
           <button
             key={ex}
             type="button"

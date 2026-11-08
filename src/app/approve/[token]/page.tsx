@@ -107,7 +107,7 @@ async function Approval({ params, searchParams }: { params: Promise<{ token: str
             {n}
           </p>
         ))}
-        <p className="text-sm text-muted-foreground">{p.bills ? "Next due date rolls forward a month. We'll remind you on WhatsApp before it's due." : "We'll message you tracking numbers when the stores ship."}</p>
+        <p className="text-sm text-muted-foreground">{p.bills ? "Paid to LifeCart's PayPal account (sandbox); forwarding to the biller isn't connected yet. The next due date rolls forward a month." : "We'll message you tracking numbers when the stores ship."}</p>
         <Link href={p.bills ? "/bills" : `/plans/${p.goalId}`} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground no-underline">
           {p.bills ? "Back to my bills" : "Back to my plan"}
         </Link>

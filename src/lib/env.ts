@@ -36,6 +36,9 @@ export const env = {
   twilioSid: read("TWILIO_ACCOUNT_SID"),
   twilioToken: read("TWILIO_AUTH_TOKEN"),
   twilioFrom: read("TWILIO_FROM"),
+
+  gmailUser: read("GMAIL_USER"),
+  gmailAppPassword: read("GMAIL_APP_PASSWORD")?.replace(/\s+/g, ""),
 };
 
 export type IntegrationStatus = {

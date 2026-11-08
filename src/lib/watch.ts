@@ -26,14 +26,14 @@ export type WatchResult = {
   note?: string;
 };
 
-export async function listWatched() {
+export async function listWatched(userId: string) {
   const db = await getDb();
   return db
     .select({ item: schema.planItems, offer: schema.offers, goal: schema.goals })
     .from(schema.planItems)
     .innerJoin(schema.goals, eq(schema.goals.id, schema.planItems.goalId))
     .leftJoin(schema.offers, eq(schema.offers.id, schema.planItems.chosenOfferId))
-    .where(and(eq(schema.planItems.payType, "watch"), eq(schema.planItems.kind, "product"), isNull(schema.planItems.purchasedAt)))
+    .where(and(eq(schema.goals.userId, userId), eq(schema.planItems.payType, "watch"), eq(schema.planItems.kind, "product"), isNull(schema.planItems.purchasedAt)))
     .orderBy(asc(schema.planItems.lastCheckedAt));
 }
 
@@ -41,9 +41,9 @@ export async function listWatched() {
  * Check prices now. `simulateItemId` (demo only) pretends that one item dropped just below its target, so the
  * alert -> WhatsApp -> PayPal flow can be shown without waiting for a real sale.
  */
-export async function checkWatches(origin: string, opts: { simulateItemId?: string } = {}): Promise<{ results: WatchResult[]; whatsapp: SendResult | null }> {
+export async function checkWatches(origin: string, opts: { userId: string; simulateItemId?: string }): Promise<{ results: WatchResult[]; whatsapp: SendResult | null }> {
   const db = await getDb();
-  const rows = (await listWatched()).filter((r) => !opts.simulateItemId || r.item.id === opts.simulateItemId).slice(0, MAX_PER_RUN);
+  const rows = (await listWatched(opts.userId)).filter((r) => !opts.simulateItemId || r.item.id === opts.simulateItemId).slice(0, MAX_PER_RUN);
   const results: WatchResult[] = [];
   const alerts: { approvalId: string; line: string }[] = [];
 

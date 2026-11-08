@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
+import { requireUser } from "@/lib/auth/session";
 import { Check } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { PlanRunner } from "@/components/plan/plan-runner";
@@ -9,11 +9,11 @@ import { PlanWorkspace } from "@/components/plan/plan-workspace";
 import { getPlan } from "@/lib/plans";
 
 async function PlanContent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await connection(); // plans change per request; never prerender them
+  const user = await requireUser();
   const { id } = await params;
   const sp = await searchParams;
   const itemParam = typeof sp.item === "string" ? sp.item : null;
-  const plan = await getPlan(id).catch(() => null);
+  const plan = await getPlan(id, user.id).catch(() => null);
   if (!plan) notFound();
   const { goal, items } = plan;
 

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { ApprovalLine, ApprovalPayload, ApprovalResult } from "@/db/schema";
-import { getDemoUser } from "./demo-user";
+import { getUserById } from "./users";
 import { money } from "./format";
 import {
   captureOrder,
@@ -48,10 +48,11 @@ export type Approval = typeof schema.approvals.$inferSelect;
  */
 export async function createCartApproval(
   goalId: string,
+  userId: string,
   origin: string,
   opts: { notify: boolean } = { notify: false },
 ): Promise<{ token: string; link: string; message: string; whatsapp: SendResult | null } | { error: string }> {
-  const plan = await getPlan(goalId).catch(() => null);
+  const plan = await getPlan(goalId, userId).catch(() => null);
   if (!plan || plan.goal.status !== "ready") return { error: "This plan isn't ready to pay yet." };
 
   const line = (i: (typeof plan.items)[number]): ApprovalLine => ({
@@ -83,7 +84,8 @@ export async function createCartApproval(
   const subscriptionMonthly = round(subscriptions.reduce((a, l) => a + l.unit * l.qty, 0));
   if (!orders.length && !subscriptions.length && !invoices.length) return { error: "Everything in this plan is already paid or on price watch." };
 
-  const user = await getDemoUser();
+  const user = await getUserById(userId);
+  if (!user) return { error: "Please sign in again." };
   const payload: ApprovalPayload = { goalId, orders, orderTotal, subscriptions, subscriptionMonthly, invoices, shipTo: user.shipTo ?? undefined };
   const token = randomBytes(24).toString("base64url");
   const db = await getDb();
@@ -172,7 +174,9 @@ export async function createWatchApproval(
   const [offer] = item.chosenOfferId ? await db.select().from(schema.offers).where(eq(schema.offers.id, item.chosenOfferId)) : [];
   const merchant = offer?.merchant ?? "the store";
   const now = round(input.now);
-  const user = await getDemoUser();
+  const [goal] = await db.select({ userId: schema.goals.userId }).from(schema.goals).where(eq(schema.goals.id, item.goalId));
+  const user = goal ? await getUserById(goal.userId) : null;
+  if (!user) return { skipped: "plan owner not found" };
   const payload: ApprovalPayload = {
     goalId: item.goalId,
     orders: [{ itemId: item.id, name: item.name, merchant, qty: item.qty, unit: now }],
@@ -501,12 +505,14 @@ async function markBillsPaid(ids: string[]) {
  * notify=true WhatsApps the link (due-date reminders); in-app "Pay" goes straight to PayPal instead.
  */
 export async function createBillApproval(
+  userId: string,
   billIds: string[],
   origin: string,
   opts: { notify: boolean; message?: (link: string) => string } = { notify: false },
 ): Promise<{ token: string; link: string; whatsapp: SendResult | null } | { error: string }> {
   const db = await getDb();
-  const user = await getDemoUser();
+  const user = await getUserById(userId);
+  if (!user) return { error: "Please sign in again." };
   const rows = billIds.length ? await db.select().from(schema.bills).where(and(inArray(schema.bills.id, billIds), eq(schema.bills.userId, user.id))) : [];
   const due = rows.filter((b) => !isPaidNow(b));
   if (!due.length) return { error: "Those bills are already paid." };
@@ -526,7 +532,7 @@ export async function createBillApproval(
   await db
     .update(schema.approvals)
     .set({ status: "expired", updatedAt: new Date() })
-    .where(and(eq(schema.approvals.kind, "bill"), inArray(schema.approvals.status, ["pending", "sent"])));
+    .where(and(eq(schema.approvals.userId, user.id), eq(schema.approvals.kind, "bill"), inArray(schema.approvals.status, ["pending", "sent"])));
 
   const token = randomBytes(24).toString("base64url");
   const [approval] = await db

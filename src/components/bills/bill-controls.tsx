@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, ExternalLink, Loader2, Lock, Plus } from "lucide-react";
-import { addBillAction, payBillsNow, sendBillReminders, switchPhonePlan, type AddBillState, type PayState } from "@/app/actions";
+import { addBillAction, addSampleBillsAction, payBillsNow, sendBillReminders, switchPhonePlan, type AddBillState, type PayState } from "@/app/actions";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -182,5 +182,29 @@ export function AddBillForm() {
         </button>
       </div>
     </form>
+  );
+}
+
+/** Demo tools: add a realistic set of sample bills (once). */
+export function SampleBillsButton() {
+  const [msg, setMsg] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => start(async () => setMsg((await addSampleBillsAction()).message))}
+        className="flex min-h-10 items-center gap-2 self-start rounded-[10px] border border-dashed border-[#B9C3D3] bg-card px-3.5 text-sm font-semibold hover:border-primary disabled:opacity-60"
+      >
+        {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
+        Add sample bills (demo)
+      </button>
+      {msg && (
+        <p role="status" className="text-[13px] text-muted-foreground">
+          {msg}
+        </p>
+      )}
+    </div>
   );
 }

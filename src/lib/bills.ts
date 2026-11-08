@@ -1,13 +1,12 @@
-import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { createBillApproval, isPaidNow } from "./approvals";
-import { getDemoUser } from "./demo-user";
 import { money, num } from "./format";
 import type { SendResult } from "./whatsapp";
 
 /**
- * Bills hub. Billers here are demo payees in the PayPal sandbox (there's no public biller-network API);
- * the PayPal payment itself is real (sandbox), through the same verified approval flow as plans.
+ * Bills hub. Payments are real PayPal (sandbox) payments through the same verified approval flow as plans.
+ * In this build they are paid to LifeCart's PayPal account; forwarding to the biller (e.g. PayPal Payouts) isn't connected.
  */
 
 export type Bill = typeof schema.bills.$inferSelect;
@@ -36,27 +35,25 @@ const inDays = (n: number) => {
   return d;
 };
 
-/** First visit: a realistic set of US household bills (demo payees). */
-async function seedDemoBills(userId: string) {
+/** Demo tools only: a realistic set of sample US household bills. */
+export async function addSampleBills(userId: string) {
   const db = await getDb();
+  const [has] = await db.select({ id: schema.bills.id }).from(schema.bills).where(and(eq(schema.bills.userId, userId), sql`${schema.bills.payee} like '%(sample%'`)).limit(1);
+  if (has) return { added: 0 };
   await db.insert(schema.bills).values([
-    { userId, type: "phone", name: "Phone top-up", payee: "Prepaid Wireless (demo)", accountLabel: "Unlimited plan · (415) ···0142", amount: "30", averageAmount: "30", dueDate: inDays(2), autopayMode: "ask", planOptions: [{ price: 20, label: "5 GB" }, { price: 30, label: "Unlimited" }, { price: 45, label: "Unlimited+" }], usageNote: "3 GB" },
-    { userId, type: "electricity", name: "Electricity", payee: "City Power & Light (demo)", accountLabel: "Account ···4471", amount: "96.40", averageAmount: "73.50", dueDate: inDays(5), autopayMode: "ask" },
-    { userId, type: "internet", name: "Internet", payee: "FiberNet (demo)", accountLabel: "500 Mbps · account ···8820", amount: "65", averageAmount: "65", dueDate: inDays(9), autopayMode: "autopay_notify" },
-    { userId, type: "subscription", name: "Streaming", payee: "StreamBox (demo)", accountLabel: "Standard plan", amount: "15.49", averageAmount: "15.49", dueDate: inDays(11), autopayMode: "autopay_notify" },
-    { userId, type: "water", name: "Water", payee: "Metro Water District (demo)", accountLabel: "Account ···2093", amount: "42.10", averageAmount: "40.80", dueDate: inDays(16), autopayMode: "ask" },
-    { userId, type: "rent", name: "Rent", payee: "Maple Court Apartments (demo landlord)", accountLabel: "Apt 4B", amount: "1850", averageAmount: "1850", dueDate: inDays(20), autopayMode: "remind" },
+    { userId, type: "phone", name: "Phone top-up", payee: "Prepaid Wireless (sample)", accountLabel: "Unlimited plan · (415) ···0142", amount: "30", averageAmount: "30", dueDate: inDays(2), autopayMode: "ask", planOptions: [{ price: 20, label: "5 GB" }, { price: 30, label: "Unlimited" }, { price: 45, label: "Unlimited+" }], usageNote: "3 GB" },
+    { userId, type: "electricity", name: "Electricity", payee: "City Power & Light (sample)", accountLabel: "Account ···4471", amount: "96.40", averageAmount: "73.50", dueDate: inDays(5), autopayMode: "ask" },
+    { userId, type: "internet", name: "Internet", payee: "FiberNet (sample)", accountLabel: "500 Mbps · account ···8820", amount: "65", averageAmount: "65", dueDate: inDays(9), autopayMode: "autopay_notify" },
+    { userId, type: "subscription", name: "Streaming", payee: "StreamBox (sample)", accountLabel: "Standard plan", amount: "15.49", averageAmount: "15.49", dueDate: inDays(11), autopayMode: "autopay_notify" },
+    { userId, type: "water", name: "Water", payee: "Metro Water District (sample)", accountLabel: "Account ···2093", amount: "42.10", averageAmount: "40.80", dueDate: inDays(16), autopayMode: "ask" },
+    { userId, type: "rent", name: "Rent", payee: "Maple Court Apartments (sample landlord)", accountLabel: "Apt 4B", amount: "1850", averageAmount: "1850", dueDate: inDays(20), autopayMode: "remind" },
   ]);
+  return { added: 6 };
 }
 
-export async function listBills(): Promise<BillView[]> {
-  const user = await getDemoUser();
+export async function listBills(userId: string): Promise<BillView[]> {
   const db = await getDb();
-  let rows = await db.select().from(schema.bills).where(eq(schema.bills.userId, user.id)).orderBy(asc(schema.bills.dueDate));
-  if (!rows.length) {
-    await seedDemoBills(user.id);
-    rows = await db.select().from(schema.bills).where(eq(schema.bills.userId, user.id)).orderBy(asc(schema.bills.dueDate));
-  }
+  const rows = await db.select().from(schema.bills).where(eq(schema.bills.userId, userId)).orderBy(asc(schema.bills.dueDate));
   return rows.map((b) => ({
     id: b.id,
     type: b.type,
@@ -103,25 +100,23 @@ export function insights(bills: BillView[]): Insight[] {
   return out;
 }
 
-export async function changePhonePlan(billId: string, price: number) {
+export async function changePhonePlan(billId: string, price: number, userId: string) {
   const db = await getDb();
-  const user = await getDemoUser();
-  const [b] = await db.select().from(schema.bills).where(and(eq(schema.bills.id, billId), eq(schema.bills.userId, user.id)));
+  const [b] = await db.select().from(schema.bills).where(and(eq(schema.bills.id, billId), eq(schema.bills.userId, userId)));
   const opt = b?.planOptions?.find((o) => o.price === price);
   if (!b || !opt) return { error: "Unknown plan" };
   await db
     .update(schema.bills)
-    .set({ amount: String(opt.price), averageAmount: String(opt.price), accountLabel: `${opt.label} plan · (415) ···0142` })
+    .set({ amount: String(opt.price), averageAmount: String(opt.price), accountLabel: `${opt.label} plan` })
     .where(eq(schema.bills.id, billId));
   return { ok: true };
 }
 
-export async function addBill(input: { name: string; payee: string; type: string; amount: number; dueDate: Date }) {
+export async function addBill(userId: string, input: { name: string; payee: string; type: string; amount: number; dueDate: Date }) {
   const db = await getDb();
-  const user = await getDemoUser();
   const type = ["rent", "electricity", "water", "internet", "phone", "subscription", "other"].includes(input.type) ? input.type : "other";
   await db.insert(schema.bills).values({
-    userId: user.id,
+    userId,
     type: type as Bill["type"],
     name: input.name,
     payee: input.payee,
@@ -135,9 +130,8 @@ export async function addBill(input: { name: string; payee: string; type: string
  * Due-date reminders: bills unpaid and due within 3 days (or overdue), not reminded in the last 24h.
  * Sends ONE WhatsApp digest with ONE PayPal link covering all of them. Returns what it did.
  */
-export async function remindDueBills(origin: string): Promise<{ count: number; whatsapp: SendResult | null; link?: string }> {
+export async function remindDueBills(origin: string, userId: string): Promise<{ count: number; whatsapp: SendResult | null; link?: string }> {
   const db = await getDb();
-  const user = await getDemoUser();
   const soon = new Date(Date.now() + 3 * DAY);
   const cooldown = new Date(Date.now() - DAY);
   const rows = (
@@ -146,7 +140,7 @@ export async function remindDueBills(origin: string): Promise<{ count: number; w
       .from(schema.bills)
       .where(
         and(
-          eq(schema.bills.userId, user.id),
+          eq(schema.bills.userId, userId),
           lt(schema.bills.dueDate, soon),
           or(isNull(schema.bills.lastRemindedAt), lt(schema.bills.lastRemindedAt, cooldown)),
         ),
@@ -158,6 +152,7 @@ export async function remindDueBills(origin: string): Promise<{ count: number; w
   const total = rows.reduce((a, b) => a + Number(b.amount), 0);
   const day = (d: Date) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const res = await createBillApproval(
+    userId,
     rows.map((b) => b.id),
     origin,
     {
@@ -166,7 +161,7 @@ export async function remindDueBills(origin: string): Promise<{ count: number; w
         [
           `*LifeCart*: ${rows.length === 1 ? "a bill is" : `${rows.length} bills are`} due soon`,
           "",
-          ...rows.map((b) => `• ${b.name} (${b.payee.replace(/ \(demo.*\)$/, "")}): *${money(Number(b.amount))}*, due ${day(b.dueDate)}`),
+          ...rows.map((b) => `• ${b.name} (${b.payee.replace(/ \(sample.*\)$/, "")}): *${money(Number(b.amount))}*, due ${day(b.dueDate)}`),
           "",
           `Total ${money(total)}. Pay with PayPal (link valid 6 hours):`,
           link,

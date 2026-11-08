@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { connection } from "next/server";
 import { BellRing, CalendarClock, ChevronRight } from "lucide-react";
 import { listBills } from "@/lib/bills";
 import { money, num } from "@/lib/format";
@@ -8,9 +7,8 @@ import { listWatched } from "@/lib/watch";
 const when = (days: number) => (days < 0 ? `${-days} day${days === -1 ? "" : "s"} overdue` : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due in ${days} days`);
 
 /** Home: the next bills and watched prices, straight from the database (no API calls on page view). */
-export async function ComingUp() {
-  await connection();
-  const [bills, watched] = await Promise.all([listBills(), listWatched()]);
+export async function ComingUp({ userId }: { userId: string }) {
+  const [bills, watched] = await Promise.all([listBills(userId), listWatched(userId)]);
   const due = bills.filter((b) => !b.paid && b.daysLeft <= 14).slice(0, 4);
   const thisWeek = bills.filter((b) => !b.paid && b.daysLeft <= 7).reduce((s, b) => s + b.amount, 0);
   const watch = watched.slice(0, 3).map(({ item, offer }) => {
