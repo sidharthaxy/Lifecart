@@ -9,6 +9,7 @@ import { allow, clientKey } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
 import { chooseOffer, setItemRail } from "@/lib/plans";
 import { checkWatches } from "@/lib/watch";
+import { cancelRefills } from "@/lib/manage";
 
 const isId = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f-]{36}$/.test(s);
 
@@ -60,6 +61,17 @@ export async function runWatchCheck(simulateItemId?: string): Promise<WatchCheck
     message: `${hits.length} price drop(s): ${first.name} is now $${first.now?.toFixed(2)} (target $${first.target.toFixed(2)}). ${sent}${fixedNote}`,
     link: first.link,
   };
+}
+
+/** Cancel a refills subscription from the Orders page. */
+export async function cancelRefillsAction(paymentId: string): Promise<{ status?: string; error?: string }> {
+  if (!isId(paymentId)) return { error: "Unknown subscription" };
+  const h = await headers();
+  const rl = allow(`cancel:${clientKey(h)}`, 10, 60 * 60_000);
+  if (!rl.ok) return { error: "Too many attempts. Try again in a few minutes." };
+  const res = await cancelRefills(paymentId);
+  revalidatePath("/orders");
+  return res;
 }
 
 export type PayState = { error: string } | undefined;

@@ -8,6 +8,8 @@ import { CheckPricesButton, SimulateDropButton } from "@/components/watch/watch-
 import { getDb, schema } from "@/db";
 import { money, num } from "@/lib/format";
 import { listWatched } from "@/lib/watch";
+import { listManaged } from "@/lib/manage";
+import { CancelRefillsButton } from "@/components/watch/cancel-refills";
 
 const ago = (d: Date | null) => {
   if (!d) return "not checked yet";
@@ -97,6 +99,58 @@ async function Watchlist() {
   );
 }
 
+const STATUS_STYLE: Record<string, string> = {
+  active: "bg-success-soft text-success",
+  approved: "bg-success-soft text-success",
+  paid: "bg-success-soft text-success",
+  sent: "bg-accent text-primary",
+  unpaid: "bg-warning-soft text-warning",
+  cancelled: "bg-muted text-muted-foreground",
+  canceled: "bg-muted text-muted-foreground",
+};
+
+async function Managed() {
+  await connection();
+  const items = await listManaged();
+  if (!items.length) return null;
+  return (
+    <section aria-labelledby="managed" className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
+      <div className="flex flex-col gap-1">
+        <h2 id="managed" className="text-lg font-semibold">
+          Refills and service invoices
+        </h2>
+        <p className="text-sm text-muted-foreground">Live status from PayPal. Refills can be cancelled anytime.</p>
+      </div>
+      <ul className="flex flex-col divide-y divide-border">
+        {items.map((m) => {
+          const s = m.status.toLowerCase();
+          return (
+            <li key={m.paymentId} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5">
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="font-semibold">{m.rail === "subscription" ? `Refills: ${m.lines.join(", ")}` : m.lines[0]}</span>
+                <span className="text-[13px] text-muted-foreground">
+                  {m.rail === "subscription" ? "PayPal Subscription" : "PayPal Invoice"} · {m.title} · <span className="font-mono text-xs">{m.paypalId}</span>
+                </span>
+              </span>
+              <span className="tabular font-semibold">
+                {money(m.amount)}
+                {m.rail === "subscription" ? "/mo" : ""}
+              </span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_STYLE[s] ?? "bg-muted text-foreground"}`}>{s.replace(/_/g, " ")}</span>
+              {m.rail === "subscription" && ["active", "approved"].includes(s) && <CancelRefillsButton paymentId={m.paymentId} />}
+              {m.rail === "invoice" && m.url && !["paid", "cancelled"].includes(s) && (
+                <a href={m.url} target="_blank" rel="noreferrer" className="text-[13px] font-semibold">
+                  Pay invoice
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 async function Payments() {
   await connection();
   const db = await getDb();
@@ -149,6 +203,9 @@ export default function OrdersPage() {
         </div>
         <Suspense fallback={<div className="h-64 animate-pulse rounded-2xl bg-muted" />}>
           <Watchlist />
+        </Suspense>
+        <Suspense fallback={<div className="h-32 animate-pulse rounded-2xl bg-muted" />}>
+          <Managed />
         </Suspense>
         <Suspense fallback={<div className="h-48 animate-pulse rounded-2xl bg-muted" />}>
           <Payments />

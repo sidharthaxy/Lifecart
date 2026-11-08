@@ -12,14 +12,19 @@ type ToolkitTool = {
   execute: (args: unknown, opts?: unknown) => Promise<unknown>;
 };
 
+let toolkit: PayPalAgentToolkit | null = null;
 let tools: Record<string, ToolkitTool> | null = null;
-function getTools() {
+function getToolkit() {
   if (!env.paypalClientId || !env.paypalClientSecret) throw new PayPalError("PayPal keys are not configured");
-  tools ??= new PayPalAgentToolkit({
+  toolkit ??= new PayPalAgentToolkit({
     clientId: env.paypalClientId,
     clientSecret: env.paypalClientSecret,
     configuration: { actions: ALL_TOOLS_ENABLED, context: { sandbox: env.paypalEnv !== "live" } },
-  }).getTools() as unknown as Record<string, ToolkitTool>;
+  });
+  return toolkit;
+}
+function getTools() {
+  tools ??= getToolkit().getTools() as unknown as Record<string, ToolkitTool>;
   return tools;
 }
 
@@ -67,21 +72,59 @@ const money2 = (n: number) => Math.round(n * 100) / 100;
 
 // ---- Orders -----------------------------------------------------------------------------------
 
-export async function createOrder(input: { lines: { name: string; qty: number; unit: number }[]; returnUrl: string; cancelUrl: string; note?: string }) {
-  const items = input.lines.map((l) => ({
-    name: l.name.slice(0, 120),
-    quantity: l.qty,
-    itemCost: money2(l.unit),
-    taxPercent: 0,
-    itemTotal: money2(l.unit * l.qty),
-  }));
-  const o = await paypal<{ id: string; status: string; links?: Link[] }>("create_order", {
-    currencyCode: "USD",
-    items,
-    notes: input.note ?? null,
-    returnUrl: input.returnUrl,
-    cancelUrl: input.cancelUrl,
-  });
+/**
+ * Create a PayPal order the buyer approves on PayPal.
+ * This one call goes straight to Orders v2 (through the toolkit's own authenticated client) because the toolkit's
+ * create_order tool doesn't expose experience_context: we need user_action PAY_NOW (button says "Pay Now", not
+ * "Review Order"), our brand name, and an idempotency key so a retried request can't create a second order.
+ */
+export async function createOrder(input: {
+  lines: { name: string; qty: number; unit: number }[];
+  returnUrl: string;
+  cancelUrl: string;
+  note?: string;
+  requestId: string;
+}) {
+  if (!(await canSpend("paypal", { calls: 1 }))) throw new PayPalError("Daily PayPal call budget reached");
+  const tk = getToolkit();
+  const total = money2(input.lines.reduce((a, l) => a + money2(l.unit) * l.qty, 0)).toFixed(2);
+  const body = {
+    intent: "CAPTURE",
+    purchase_units: [
+      {
+        description: input.note?.slice(0, 127),
+        items: input.lines.map((l) => ({
+          name: l.name.slice(0, 127),
+          quantity: String(l.qty),
+          unit_amount: { currency_code: "USD", value: money2(l.unit).toFixed(2) },
+        })),
+        amount: { currency_code: "USD", value: total, breakdown: { item_total: { currency_code: "USD", value: total } } },
+      },
+    ],
+    payment_source: {
+      paypal: {
+        experience_context: {
+          brand_name: "LifeCart",
+          user_action: "PAY_NOW",
+          shipping_preference: "GET_FROM_FILE",
+          return_url: input.returnUrl,
+          cancel_url: input.cancelUrl,
+        },
+      },
+    },
+  };
+  await record("paypal", { calls: 1 });
+  const res = await withTimeout(
+    fetch(`${tk.client.getBaseUrl()}/v2/checkout/orders`, {
+      method: "POST",
+      headers: { ...(await tk.client.getHeaders()), "Content-Type": "application/json", "PayPal-Request-Id": input.requestId },
+      body: JSON.stringify(body),
+    }),
+    25_000,
+    "PayPal create order",
+  );
+  const o = (await res.json().catch(() => ({}))) as { id?: string; status?: string; links?: Link[]; message?: string };
+  if (!res.ok) throw new PayPalError(o.message ?? "PayPal couldn't create the order", res.status, o);
   const approveUrl = linkOf(o, "payer-action") ?? linkOf(o, "approve");
   if (!o.id || !approveUrl) throw new PayPalError("PayPal did not return an approval link", undefined, o);
   return { id: o.id, approveUrl };
@@ -170,4 +213,16 @@ export async function createAndSendInvoice(input: { provider: string; email: str
   const sent = await paypal<{ href?: string; rel?: string }>("send_invoice", { invoice_id: id, send_to_recipient: true });
   const inv = await paypal<{ status?: string; detail?: { metadata?: { recipient_view_url?: string } } }>("get_invoice", { invoice_id: id }).catch(() => null);
   return { id, status: inv?.status ?? "SENT", url: inv?.detail?.metadata?.recipient_view_url ?? (sent?.rel === "payer-view" ? sent.href : undefined) };
+}
+
+// ---- After-payment management ----------------------------------------------------------------------
+
+export async function cancelSubscription(id: string, reason = "Cancelled by the customer in LifeCart") {
+  await paypal("cancel_subscription", { subscription_id: id, payload: { reason } });
+  return getSubscription(id);
+}
+
+export async function getInvoiceStatus(id: string) {
+  const inv = await paypal<{ status?: string; detail?: { metadata?: { recipient_view_url?: string } } }>("get_invoice", { invoice_id: id });
+  return { status: inv.status ?? "UNKNOWN", url: inv.detail?.metadata?.recipient_view_url };
 }

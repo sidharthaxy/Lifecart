@@ -277,6 +277,8 @@ export async function startPayment(token: string, origin: string): Promise<{ red
         returnUrl: u.ret("order"),
         cancelUrl: u.cancel,
         note: `LifeCart: ${a.title}`,
+        // Same approval + same 10-minute window => PayPal returns the same order instead of creating another.
+        requestId: `lc-${a.id}-${Math.floor(Date.now() / 600_000)}`,
       });
       await db.update(schema.approvals).set({ ...extend, paypalOrderId: o.id, updatedAt: new Date() }).where(eq(schema.approvals.id, a.id));
       return { redirect: o.approveUrl };
