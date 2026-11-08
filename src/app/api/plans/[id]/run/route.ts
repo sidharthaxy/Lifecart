@@ -9,14 +9,33 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/plans/[id]/run
   if (!user) return Response.json({ error: "Sign in first." }, { status: 401 });
   if (!/^[0-9a-f-]{36}$/.test(id) || !(await ownsGoal(id, user.id))) return Response.json({ error: "Plan not found" }, { status: 404 });
   const encoder = new TextEncoder();
+  // If the viewer leaves the page, the stream closes. Planning must NOT fail because of that: we just stop
+  // sending progress and let the run finish in the background, so the plan is ready when they come back.
+  let open = true;
   const stream = new ReadableStream({
     async start(controller) {
-      const emit = (e: StepEvent) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+      const emit = (e: StepEvent) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+        } catch {
+          open = false;
+        }
+      };
       try {
         await runPlan(id, emit);
       } finally {
-        controller.close();
+        if (open) {
+          try {
+            controller.close();
+          } catch {
+            // already closed by the browser
+          }
+        }
       }
+    },
+    cancel() {
+      open = false;
     },
   });
   return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" } });

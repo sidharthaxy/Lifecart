@@ -34,7 +34,7 @@ for (const [name, table] of tables) {
   for (let i = 0; i < rows.length; i += 200) {
     const chunk = rows.slice(i, i + 200);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res = await to.insert(table as any).values(chunk).onConflictDoNothing().returning();
+    const res = (await to.insert(table as any).values(chunk).onConflictDoNothing().returning()) as unknown[];
     copied += res.length;
   }
   console.log(`${name.padEnd(16)} ${String(rows.length).padStart(5)} rows, ${copied} copied`);
