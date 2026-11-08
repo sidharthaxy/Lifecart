@@ -92,77 +92,15 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
         </div>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        {/* Left half: what you'll pay, and the button */}
-        <div className="flex flex-col gap-4 lg:sticky lg:top-6">
-          <aside aria-label="Totals" className="flex flex-col gap-4 rounded-2xl bg-ink p-6 text-white">
-            <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2.5 text-sm">
-              {orderTotal > 0 && (
-                <>
-                  <dt className="text-[#C3CAD6]">Orders</dt>
-                  <dd className="tabular text-right">{money(orderTotal)}</dd>
-                </>
-              )}
-              {subTotal > 0 && (
-                <>
-                  <dt className="text-[#C3CAD6]">First month of refills</dt>
-                  <dd className="tabular text-right">{money(subTotal)}</dd>
-                </>
-              )}
-              {belowList > 0 && (
-                <>
-                  <dt className="text-[#9CE3BF]">Below list price</dt>
-                  <dd className="tabular text-right text-[#9CE3BF]">−{money(belowList)} included</dd>
-                </>
-              )}
-            </dl>
-            <div className="flex items-baseline justify-between border-t border-[#2A3446] pt-3.5">
-              <span>Due on approval</span>
-              <span className="tabular font-heading text-[32px] font-extrabold">{money(dueNow)}</span>
-            </div>
-            {services.length > 0 && (
-              <span className="text-[13px] text-[#C3CAD6]">
-                Service invoices ({services.map((s) => `${money(price(s))}${s.cadence === "monthly" ? "/mo" : ""}`).join(", ")}) arrive separately by email from PayPal.
-              </span>
-            )}
-            {overBudget && user.prefs.payInParts !== false && (
-              <div className="flex gap-2.5 rounded-xl bg-[#1B2740] p-3.5 text-[13px] text-[#DDE4F7]">
-                <SplitSquareHorizontal className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>
-                  This is {money(dueNow - budget!)} more than the {money(budget)} left in your shopping budget this month.{" "}
-                  {canSplit
-                    ? `On the PayPal screen, choose Pay Later to split it into 4 interest-free payments of about ${money(dueNow / 4)}, if PayPal offers it to you.`
-                    : "PayPal Pay in 4 covers $30 to $1,500, so this total is too large to split. You could move some items to price watch first."}
-                </span>
-              </div>
-            )}
-            <PayButton goalId={id} disabled={nothingToPay} />
-          </aside>
-
-          <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-6">
-            <h2 className="flex items-center gap-2 text-[17px] font-semibold">
-              <Heart className="size-[18px] text-primary" aria-hidden /> Thanks for shopping with us
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              You&apos;ll pay securely on PayPal. After that we&apos;ll keep an eye on prices, refills and renewals for you, and message you only when something needs you.
-            </p>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-[#EEF1F5] pt-3 text-sm">
-              <dt className="text-muted-foreground">Ship to</dt>
-              <dd>{user.shipTo ?? "The address in your PayPal account"}</dd>
-              <dt className="text-muted-foreground">Alerts</dt>
-              <dd>{phone ? `WhatsApp for price drops, bills and renewals` : "Not connected"}</dd>
-            </dl>
-          </section>
-        </div>
-
-        {/* Right half: only the sections that have something in them */}
-        <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+        {/* Left (two thirds): only the sections that have something in them, stacked and scrollable */}
+        <div className="flex flex-col gap-4 lg:order-1 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-2" role="region" tabIndex={0} aria-label="What you are paying for">
           {bought.length > 0 && (
             <p className="rounded-xl border border-border bg-card px-5 py-3 text-sm text-muted-foreground">
               <strong className="text-foreground">Already paid:</strong> {bought.map((i) => i.name).join(", ")}. These won&apos;t be charged again.
             </p>
           )}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] items-start gap-4">
+          <div className="flex flex-col gap-4">
             {orders.length > 0 && (
               <Lane title="One-time orders" sub="Charged when you approve" color="var(--primary)">
                 {[...byStore.entries()].map(([store, its]) => (
@@ -211,6 +149,69 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
             )}
           </div>
           {nothingToPay && !watching.length && <p className="rounded-xl border border-border bg-card px-5 py-4 text-sm text-muted-foreground">Everything in this plan is paid. Nice.</p>}
+        </div>
+        {/* Right (one third at most): what you will pay, and the button */}
+        <div className="flex flex-col gap-4 lg:sticky lg:top-6 lg:order-2">
+          <aside aria-label="Totals" className="flex flex-col gap-4 rounded-2xl bg-ink p-6 text-white">
+            {(orderTotal > 0 || subTotal > 0 || belowList > 0) && (
+            <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2.5 text-sm">
+              {orderTotal > 0 && (
+                <>
+                  <dt className="text-[#C3CAD6]">Orders</dt>
+                  <dd className="tabular text-right">{money(orderTotal)}</dd>
+                </>
+              )}
+              {subTotal > 0 && (
+                <>
+                  <dt className="text-[#C3CAD6]">First month of refills</dt>
+                  <dd className="tabular text-right">{money(subTotal)}</dd>
+                </>
+              )}
+              {belowList > 0 && (
+                <>
+                  <dt className="text-[#9CE3BF]">Below list price</dt>
+                  <dd className="tabular text-right text-[#9CE3BF]">−{money(belowList)} included</dd>
+                </>
+              )}
+            </dl>
+            )}
+            <div className={orderTotal > 0 || subTotal > 0 || belowList > 0 ? "flex items-baseline justify-between border-t border-[#2A3446] pt-3.5" : "flex items-baseline justify-between"}>
+              <span>Due on approval</span>
+              <span className="tabular font-heading text-[32px] font-extrabold">{money(dueNow)}</span>
+            </div>
+            {services.length > 0 && (
+              <span className="text-[13px] text-[#C3CAD6]">
+                Service invoices ({services.map((s) => `${money(price(s))}${s.cadence === "monthly" ? "/mo" : ""}`).join(", ")}) arrive separately by email from PayPal.
+              </span>
+            )}
+            {overBudget && user.prefs.payInParts !== false && (
+              <div className="flex gap-2.5 rounded-xl bg-[#1B2740] p-3.5 text-[13px] text-[#DDE4F7]">
+                <SplitSquareHorizontal className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <span>
+                  This is {money(dueNow - budget!)} more than the {money(budget)} left in your shopping budget this month.{" "}
+                  {canSplit
+                    ? `On the PayPal screen, choose Pay Later to split it into 4 interest-free payments of about ${money(dueNow / 4)}, if PayPal offers it to you.`
+                    : "PayPal Pay in 4 covers $30 to $1,500, so this total is too large to split. You could move some items to price watch first."}
+                </span>
+              </div>
+            )}
+            <PayButton goalId={id} disabled={nothingToPay} />
+          </aside>
+
+          <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-6">
+            <h2 className="flex items-center gap-2 text-[17px] font-semibold">
+              <Heart className="size-[18px] text-primary" aria-hidden /> Thanks for shopping with us
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              You&apos;ll pay securely on PayPal. After that we&apos;ll keep an eye on prices, refills and renewals for you, and message you only when something needs you.
+            </p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-[#EEF1F5] pt-3 text-sm">
+              <dt className="text-muted-foreground">Ship to</dt>
+              <dd>{user.shipTo ?? "The address in your PayPal account"}</dd>
+              <dt className="text-muted-foreground">Alerts</dt>
+              <dd>{phone ? `WhatsApp for price drops, bills and renewals` : "Not connected"}</dd>
+            </dl>
+          </section>
         </div>
       </div>
     </div>
