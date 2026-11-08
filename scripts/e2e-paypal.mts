@@ -1,8 +1,10 @@
 // End-to-end PayPal sandbox test: checkout -> PayPal login -> Pay Now -> (subscription approval) -> receipt -> /orders.
 // Uses PAYPAL_SANDBOX_BUYER_EMAIL / PAYPAL_SANDBOX_BUYER_PASSWORD from .env.local. Creates REAL sandbox payments and
 // sends one WhatsApp receipt. Usage:
-//   npx tsx --env-file=.env.local scripts/e2e-paypal.mts <planId> <outDir> [--headful] [--cancel-refills]
+//   npx tsx --env-file=.env.local scripts/e2e-paypal.mts <planId> <outDir> --email <you@example.com> --log <devServerLogFile> [--headful] [--cancel-refills]
+// The plan must belong to that account (sign in as it and create the plan first). @example.com codes come from the dev log.
 import puppeteer, { type Page } from "puppeteer-core";
+import { signInPage } from "./lib/test-session.mjs";
 
 const args = process.argv.slice(2);
 const [planId, out = "."] = args;
@@ -29,6 +31,9 @@ const browser = await puppeteer.launch({
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 900 });
 page.on("pageerror", (e) => log("pageerror: " + (e as Error).message));
+const loginEmail = args.includes("--email") ? args[args.indexOf("--email") + 1] : null;
+const logFile = args.includes("--log") ? args[args.indexOf("--log") + 1] : null;
+if (!loginEmail || !logFile) throw new Error("pass --email <account@example.com> and --log <devServerLogFile> (pages need sign-in)");
 
 /** Click the first visible button/link whose text matches. */
 async function clickText(p: Page, re: RegExp, timeout = 30_000) {
@@ -106,6 +111,8 @@ async function paypalLogin(p: Page) {
 
 try {
   // 1. Checkout -> Pay with PayPal
+  await signInPage(page, loginEmail, logFile, base);
+  log(`signed in as ${loginEmail}`);
   await page.goto(startPath ? `${base}${startPath}` : `${base}/plans/${planId}/checkout`, { waitUntil: "networkidle0" });
   await snap(page, "start");
   log(`${startPath ?? "checkout"} page loaded`);

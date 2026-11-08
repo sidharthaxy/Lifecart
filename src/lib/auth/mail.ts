@@ -10,8 +10,11 @@ let transport: nodemailer.Transporter | null = null;
 
 export const mailConfigured = () => Boolean(env.gmailUser && env.gmailAppPassword);
 
+/** Reserved test domains (RFC 2606) are never emailed: dev test scripts use them, and real mail would bounce. */
+const isTestAddress = (to: string) => /@(example\.(com|net|org)|[^@]+\.(test|invalid|example))$/i.test(to);
+
 export async function sendSignInCode(to: string, code: string): Promise<{ sent: true } | { sent: false; reason: string }> {
-  if (!mailConfigured()) {
+  if (!mailConfigured() || isTestAddress(to)) {
     if (process.env.NODE_ENV !== "production") {
       console.log(`\n[auth] Sign-in code for ${to}: ${code}  (set GMAIL_USER and GMAIL_APP_PASSWORD to email it)\n`);
       return { sent: true };
