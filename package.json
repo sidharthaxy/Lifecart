@@ -10,11 +10,14 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "tunnel": "cloudflared tunnel --url http://localhost:3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "predev": "node scripts/copy-bryntum.mjs",
+    "prebuild": "node scripts/copy-bryntum.mjs"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.76",
     "@base-ui/react": "^1.9.0",
+    "@bryntum/calendar": "npm:@bryntum/calendar-trial@^7.3.8",
     "@channel3/sdk": "^4.8.0",
     "@electric-sql/pglite": "^0.5.15",
     "@onkernel/sdk": "^0.139.0",
@@ -55,6 +58,8 @@
   "allowScripts": {
     "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "@bryntum/calendar-trial-lib@1.0.1": true,
+    "@bryntum/calendar-trial@7.3.8": true
   }
 }

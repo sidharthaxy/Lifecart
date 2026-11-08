@@ -43,3 +43,6 @@ next-env.d.ts
 # keep the template, ignore the local database
 !.env.example
 /.data/
+
+# Bryntum runtime files (copied from node_modules by scripts/copy-bryntum.mjs)
+/public/vendor/bryntum

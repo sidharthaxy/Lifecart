@@ -1,0 +1,25 @@
+import puppeteer from "puppeteer-core";
+const out = process.argv[2] ?? ".";
+const browser = await puppeteer.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true });
+const page = await browser.newPage();
+await page.setViewport({ width: 1366, height: 900 });
+const errs: string[] = [];
+page.on("pageerror", (e) => errs.push((e as Error).message));
+page.on("console", (m) => m.type() === "error" && errs.push("console: " + m.text().slice(0, 200)));
+const t0 = Date.now();
+await page.goto("http://localhost:3000/money", { waitUntil: "networkidle0", timeout: 180_000 });
+console.log("loaded in", ((Date.now() - t0) / 1000).toFixed(1), "s");
+await page.waitForSelector(".b-calendar, .b-calendarpanel, .money-calendar .b-widget", { timeout: 60_000 }).catch(() => console.log("no calendar"));
+await new Promise((r) => setTimeout(r, 2500));
+console.log((await page.$eval("main", (m) => (m as HTMLElement).innerText)).replace(/\s+/g, " ").slice(0, 1400));
+console.log("events in calendar:", await page.$$eval(".b-cal-event", (e) => e.length));
+await page.screenshot({ path: `${out}/money-full.png`, fullPage: true });
+const ws = process.argv[3];
+if (ws) {
+  await page.setViewport({ width: 390, height: 844 });
+  await new Promise((r) => setTimeout(r, 1500));
+  await page.screenshot({ path: `${out}/money-phone.png`, fullPage: true });
+  console.log("scrollWidth at 390:", await page.evaluate(() => document.documentElement.scrollWidth));
+}
+console.log("errors:", errs);
+await browser.close();

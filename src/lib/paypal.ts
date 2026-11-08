@@ -270,3 +270,36 @@ export async function listCaptures(startISO: string, endISO: string) {
     };
   });
 }
+
+/**
+ * Live status of one capture (COMPLETED / REFUNDED / PARTIALLY_REFUNDED / ...). Direct Payments v2 call through
+ * the toolkit's authenticated client (the toolkit has no get-capture tool). Real-time, unlike transaction reports.
+ */
+export async function getCapture(captureId: string) {
+  if (!/^[A-Z0-9]{10,30}$/.test(captureId)) throw new PayPalError("Bad capture id");
+  if (!(await canSpend("paypal", { calls: 1 }))) throw new PayPalError("Daily PayPal call budget reached");
+  const tk = getToolkit();
+  await record("paypal", { calls: 1 });
+  const res = await withTimeout(
+    fetch(`${tk.client.getBaseUrl()}/v2/payments/captures/${captureId}`, { headers: await tk.client.getHeaders() }),
+    15_000,
+    "PayPal capture lookup",
+  );
+  const c = (await res.json().catch(() => ({}))) as { id?: string; status?: string; amount?: { value?: string }; create_time?: string; message?: string };
+  if (!res.ok) throw new PayPalError(c.message ?? "Capture lookup failed", res.status, c);
+  return { id: c.id ?? captureId, status: c.status ?? "UNKNOWN", amount: Number(c.amount?.value ?? 0), createdAt: c.create_time };
+}
+
+/** Subscription billing info: status and PayPal's record of the last payment (what was actually charged). */
+export async function getSubscriptionBilling(id: string) {
+  const s = await paypal<{
+    status: string;
+    billing_info?: { last_payment?: { amount?: { value?: string }; time?: string }; next_billing_time?: string };
+  }>("show_subscription_details", { subscription_id: id });
+  return {
+    status: s.status,
+    lastPayment: Number(s.billing_info?.last_payment?.amount?.value ?? 0),
+    lastPaymentAt: s.billing_info?.last_payment?.time,
+    nextBillingAt: s.billing_info?.next_billing_time,
+  };
+}

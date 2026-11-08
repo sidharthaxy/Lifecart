@@ -144,3 +144,12 @@ export async function payNow(goalId: string): Promise<PayState> {
   if ("error" in started) return { error: started.error };
   redirect(started.redirect);
 }
+
+/** Money page: drop the 5-minute cache so the next render re-checks every payment with PayPal. */
+export async function refreshMoney() {
+  const h = await headers();
+  if (!allow(`money:${clientKey(h)}`, 6, 60 * 60_000).ok) return; // each refresh costs up to 30 PayPal lookups
+  const { clearMoneyCache } = await import("@/lib/money");
+  clearMoneyCache();
+  revalidatePath("/money");
+}
