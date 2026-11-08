@@ -226,3 +226,47 @@ export async function getInvoiceStatus(id: string) {
   const inv = await paypal<{ status?: string; detail?: { metadata?: { recipient_view_url?: string } } }>("get_invoice", { invoice_id: id });
   return { status: inv.status ?? "UNKNOWN", url: inv.detail?.metadata?.recipient_view_url };
 }
+
+// ---- Refunds ---------------------------------------------------------------------------------------
+
+/**
+ * Refund a capture (full, or a partial `amount`) with the toolkit's create_refund, then verify with get_refund.
+ * Returns PayPal's own final status; never trust the create response alone.
+ */
+export async function refundCapture(captureId: string, opts: { amount?: number; note?: string } = {}) {
+  const r = await paypal<{ id?: string; status?: string }>("create_refund", {
+    capture_id: captureId,
+    ...(opts.amount ? { amount: { currency_code: "USD", value: money2(opts.amount).toFixed(2) } } : {}),
+    note_to_payer: (opts.note ?? "Refund from LifeCart").slice(0, 255),
+  });
+  if (!r.id) throw new PayPalError("PayPal did not return a refund id", undefined, r);
+  const check = await paypal<{ id: string; status: string; amount?: { value: string } }>("get_refund", { refund_id: r.id });
+  return { refundId: check.id, status: check.status, amount: Number(check.amount?.value ?? 0) };
+}
+
+/** Captures on the merchant account in a date range (toolkit list_transactions; needs "Transaction search"). */
+export async function listCaptures(startISO: string, endISO: string) {
+  const d = await paypal<{ transaction_details?: { transaction_info?: Record<string, unknown> }[] }>("list_transactions", {
+    start_date: startISO,
+    end_date: endISO,
+    page_size: 100,
+  });
+  return (d.transaction_details ?? []).map((t) => {
+    const i = (t.transaction_info ?? {}) as {
+      transaction_id?: string;
+      transaction_event_code?: string;
+      transaction_status?: string;
+      transaction_amount?: { value?: string };
+      transaction_initiation_date?: string;
+      paypal_reference_id?: string;
+    };
+    return {
+      id: i.transaction_id ?? "",
+      code: i.transaction_event_code ?? "",
+      status: i.transaction_status ?? "",
+      amount: Number(i.transaction_amount?.value ?? 0),
+      at: i.transaction_initiation_date ?? "",
+      ref: i.paypal_reference_id,
+    };
+  });
+}
