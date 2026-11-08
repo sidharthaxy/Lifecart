@@ -246,7 +246,7 @@ Design tokens: ground `#F6F7F9`, surface `#FFFFFF`, ink `#0E1726`, muted `#4A546
 
 Until keys arrive, the app runs in **mock mode** (seeded products, a fake WhatsApp phone frame, SQLite). Each integration switches to live as soon as its key is present.
 
-## 13. Status and next steps (end of Nov 8)
+## 13. Status and next steps (updated Nov 8, Part 4 done)
 
 **Built and working**
 - Part 1, AI planner: clarifying questions (0-3), plan from live Channel3 listings + 90-day price history, AG Grid list with Watch / Buy now, budget slider, item drawer.
@@ -254,12 +254,20 @@ Until keys arrive, the app runs in **mock mode** (seeded products, a fake WhatsA
 - Part 2, checkout: "Pay with PayPal" (direct; WhatsApp is only for outreach). All money steps run server-side through the PayPal Agent Toolkit: Orders (capture verified with get_order), Subscriptions (refills), Invoices (services). Single-use hashed links; no double capture; bought items never charged again. Verified live: $936.99 iPhone 17 order captured, WhatsApp receipt delivered.
 - Price watch (Part 3, early): `/orders` page, live per-store price checks, ONE WhatsApp digest per run for real drops only (24h cooldown per item), a link back to the app to buy with PayPal, a demo "simulate a price drop" button, `POST /api/watch/check` for a scheduler.
 
-**Next (Nov 9 →)**
-1. Test the Golden Retriever plan end to end: order → subscription approval → service invoices → receipt.
-2. Test "Demo: simulate a price drop" once (should send exactly one WhatsApp) → buy link → PayPal.
-3. Refund the duplicate $936.99 sandbox captures from the Nov 8 capture bug (`list_transactions` → `create_refund`; sandbox reporting lags ~3h).
-4. Bills hub `/bills`: rent, electricity, internet, phone top-up; due-date WhatsApp reminders linking back to pay with PayPal; agent insights (bill above average, cheaper phone plan).
-5. Money dashboard `/money` (AG Grid Community): lifetime spend, savings (coupons/below list/price drops), payments grid, reconciled with PayPal `list_transactions`.
-6. Optional: Kernel coupon checks; PayPal button label "Pay Now" via direct Orders API call.
-7. Deploy to Render (web service + Postgres; set APP_URL; cron for `/api/watch/check`), then PayPal webhook.
-8. README with screenshots, demo video script (<3 min), Devpost submission by **Nov 12**.
+- Parts 2-3 verified end to end with `scripts/e2e-paypal.mts`: order, subscription approved then cancelled, invoices, refund. The duplicate captures are refunded.
+- Part 3, bills hub `/bills`: demo payees, pay one bill or everything due this week through PayPal, phone plan switch, insights, and ONE WhatsApp reminder digest (24h cooldown). Verified with a $30 top-up.
+- Part 4, `/money`: an AG Grid ledger that reconciles with PayPal:
+  - Every capture is re-checked live with PayPal, so refunds are detected.
+  - Refills count what PayPal's last-payment record says was charged.
+  - Invoices count once they're paid.
+  - `list_transactions` finds captures that only PayPal knows about.
+  - The page also has stat tiles, spend-by-type bars and a CSV export.
+  - A Bryntum Calendar (trial) shows bills due, renewals, payments and refunds. It loads at runtime from `public/vendor/bryntum`, because bundling the obfuscated trial build ran the dev server out of memory.
+- Home "Coming up": bills due within 14 days and watched prices, read from the database only.
+- `POST /api/cron/daily` runs price watch, then bill reminders. It is single-flight, spaced at least 1 hour apart, and requires a Bearer APPROVAL_SECRET.
+
+**Next**
+1. Delete the E2E test-copy plan (b6a6f9e0…) before recording the demo.
+2. Deploy to Render (web service + Postgres; set APP_URL; one cron job for `/api/cron/daily`), then the PayPal webhook.
+3. Optional: Kernel coupon checks.
+4. README with screenshots, demo video script (<3 min), Devpost submission by **Nov 12**.

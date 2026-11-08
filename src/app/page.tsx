@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { ShieldCheck, Lock, Store, ChevronRight } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { GoalForm } from "@/components/goal-form";
+import { ComingUp } from "@/components/coming-up";
 import { listPlans } from "@/lib/plans";
 
 const STEPS = [
@@ -57,6 +58,10 @@ export default function Home() {
         </section>
 
         <GoalForm />
+
+        <Suspense fallback={null}>
+          <ComingUp />
+        </Suspense>
 
         <Suspense fallback={null}>
           <RecentPlans />

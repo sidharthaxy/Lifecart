@@ -1,6 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { remindDueBills } from "@/lib/bills";
-import { env } from "@/lib/env";
+import { isCronAuthorized } from "@/lib/cron";
 import { appOrigin } from "@/lib/origin";
 
 /**
@@ -9,11 +8,7 @@ import { appOrigin } from "@/lib/origin";
  * Sends at most one WhatsApp digest per run; each bill at most once per 24 hours.
  */
 export async function POST(req: Request) {
-  const given = Buffer.from(req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
-  const expected = Buffer.from(env.approvalSecret ?? "");
-  if (!expected.length || given.length !== expected.length || !timingSafeEqual(given, expected)) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
-  }
+  if (!isCronAuthorized(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
   const r = await remindDueBills(appOrigin(req.headers));
   return Response.json({ reminded: r.count, whatsappSent: r.whatsapp?.sent ?? false });
 }
