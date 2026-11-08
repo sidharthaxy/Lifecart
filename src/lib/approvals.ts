@@ -481,7 +481,7 @@ export async function finalize(approvalId: string) {
         p.orders.length ? `Order: ${money(result.capturedAmount ?? p.orderTotal)} captured with PayPal` : null,
         p.subscriptions.length ? `Refills: ${money(p.subscriptionMonthly)}/mo subscription ${result.subscriptionStatus ? "active" : "set up"}` : null,
         result.invoices?.length ? `${result.invoices.length} service invoice${result.invoices.length > 1 ? "s" : ""} sent to your PayPal email` : null,
-        "We'll message you tracking numbers when the stores ship.",
+        "Your receipt is in Orders & watch on LifeCart.",
       ].filter(Boolean);
   await sendWhatsApp(lines.join("\n"));
 }

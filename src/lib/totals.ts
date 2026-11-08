@@ -42,26 +42,30 @@ export type ItemView = {
 export function computeTotals(items: ItemView[]) {
   // A service price is already the full (monthly) amount; quantity only multiplies products.
   const line = (i: ItemView) => (i.offer?.price ?? i.estimatedPrice ?? 0) * (i.kind === "service" ? 1 : i.qty);
-  const allOrders = items.filter((i) => i.payType === "order");
-  const orders = allOrders.filter((i) => !i.purchased);
-  const subs = items.filter((i) => i.payType === "subscription");
-  const allInvOnce = items.filter((i) => i.payType === "invoice" && i.cadence !== "monthly");
-  const invOnce = allInvOnce.filter((i) => !i.purchased);
-  const invMonthly = items.filter((i) => i.payType === "invoice" && i.cadence === "monthly");
-  const watch = items.filter((i) => i.payType === "watch");
+  // Anything already bought counts as paid (whatever its payment type) and is left out of everything still to pay.
+  const bought = items.filter((i) => i.purchased);
+  const open = items.filter((i) => !i.purchased);
+  const orders = open.filter((i) => i.payType === "order");
+  const subs = open.filter((i) => i.payType === "subscription");
+  const invOnce = open.filter((i) => i.payType === "invoice" && i.cadence !== "monthly");
+  const invMonthly = open.filter((i) => i.payType === "invoice" && i.cadence === "monthly");
+  const watch = open.filter((i) => i.payType === "watch");
   const sum = (xs: ItemView[]) => xs.reduce((a, i) => a + line(i), 0);
-  const belowList = items
+  const belowList = open
     .filter((i) => i.payType !== "watch" && i.offer?.wasPrice)
     .reduce((a, i) => a + (i.offer!.wasPrice! - i.offer!.price) * i.qty, 0);
 
   const buyNow = sum(orders) + sum(invOnce);
-  const paid = sum(allOrders.filter((i) => i.purchased)) + sum(allInvOnce.filter((i) => i.purchased));
-  const monthly = sum(subs) + sum(invMonthly);
+  const paid = sum(bought);
+  /** First month of refills/services not paid yet (charged at checkout). */
+  const monthlyDue = sum(subs) + sum(invMonthly);
+  /** Every month going forward: all refills and monthly services, including ones already set up. */
+  const monthly = sum([...bought, ...open].filter((i) => i.payType === "subscription" || (i.payType === "invoice" && i.cadence === "monthly")));
   return {
     buyNow,
     paid,
     monthly,
-    firstMonth: buyNow + paid + monthly,
+    firstMonth: paid + buyNow + monthlyDue,
     watching: sum(watch),
     belowList,
     rails: {
