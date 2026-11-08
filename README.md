@@ -381,7 +381,8 @@ npm run dev                  # http://localhost:3000
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | Dev server (first copies Bryntum's files into `public/vendor`) |
+| `npm run dev:all` | **Everything in one command:** starts local Postgres (Homebrew postgresql@18) and the app; **Ctrl+C** stops the app and shuts Postgres down cleanly |
+| `npm run dev` | Dev server only (first copies Bryntum's files into `public/vendor`) |
 | `npm run build` / `start` | Production build and server |
 | `npm run db:push` | Sync the schema to the database |
 | `npm run db:studio` | Browse the database |

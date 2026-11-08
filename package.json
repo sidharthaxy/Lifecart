@@ -12,7 +12,8 @@
     "tunnel": "cloudflared tunnel --url http://localhost:3000",
     "typecheck": "tsc --noEmit",
     "predev": "node scripts/copy-bryntum.mjs",
-    "prebuild": "node scripts/copy-bryntum.mjs"
+    "prebuild": "node scripts/copy-bryntum.mjs",
+    "dev:all": "bash scripts/dev-all.sh"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.76",
