@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   shipTo: text("ship_to"),
   /** Monthly shopping budget (the default budget for new plans). */
   monthlyBudget: money("monthly_budget"),
+  /** Day of the month (1-28) the shopping budget starts fresh. */
+  budgetDay: integer("budget_day").notNull().default(1),
   prefs: jsonb("prefs").$type<UserPrefs>().notNull().default({}),
   /** Set when the welcome questions are done; until then the app sends you to /welcome. */
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),

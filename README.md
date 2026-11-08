@@ -31,6 +31,9 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 - **Passwordless sign-in.** Enter your email and get a 6-digit code. Existing accounts go straight in; new accounts answer a few welcome questions (name, monthly shopping budget, where to ship, alert preferences).
 - **Profile and settings.** Everything you've shared in one place: monthly budget, "offer to pay in parts when I'm over budget", WhatsApp alert switches, connected accounts, sign out, and sign out on all devices.
 - **Fresh start.** Every account starts empty, and you only ever see your own plans, bills and payments.
+- **A monthly shopping budget that tracks spending.** You choose the amount and the day your budget month starts (1st to 28th, for example the day after payday).
+  - **What counts as spent:** one-time purchases made this budget month, active monthly refills, and service invoices paid this month. Bills are tracked separately.
+  - **Where it shows:** on the Profile page with a progress bar, on Home ("$310 left of your $500 shopping budget · starts fresh 1 December"), as the default budget for new plans, and in checkout's pay-in-parts hint.
 
 ### AI planning
 - **Describe a life change or upload a photo:** "I'm out 9 to 7 and getting a golden retriever puppy", "moving into my first studio".

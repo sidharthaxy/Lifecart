@@ -7,7 +7,8 @@ import { SignInForm } from "@/components/auth/sign-in-form";
 import { ComingUp } from "@/components/coming-up";
 import { GoalForm } from "@/components/goal-form";
 import { getSessionUser, type User } from "@/lib/auth/session";
-import { num } from "@/lib/format";
+import { money, num } from "@/lib/format";
+import { budgetStatus } from "@/lib/budget";
 import { listPlans } from "@/lib/plans";
 
 const STEPS = [
@@ -98,7 +99,10 @@ async function RecentPlans({ userId }: { userId: string }) {
 }
 
 /** Signed in: start a plan, what's coming up, your plans. */
-function Dashboard({ user }: { user: User }) {
+async function Dashboard({ user }: { user: User }) {
+  const b = await budgetStatus(user);
+  const left = b.left != null ? Math.max(0, Math.floor(b.left)) : null;
+  const resets = new Date(b.next).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
   const first = user.name.split(/\s+/)[0];
   return (
     <div className="flex min-h-screen flex-col">
@@ -108,9 +112,17 @@ function Dashboard({ user }: { user: User }) {
           <span className="text-[13px] font-semibold uppercase tracking-wide text-primary">{first ? `Hi ${first}` : "Welcome back"}</span>
           <h1 className="max-w-[760px] text-[clamp(30px,4.4vw,46px)] font-extrabold leading-[1.1] tracking-[-0.03em]">What&apos;s changing in your life?</h1>
           <p className="max-w-[600px] text-muted-foreground">Describe it or drop a photo. We&apos;ll build a priced plan you can pay for with PayPal.</p>
+          {b.budget != null && (
+            <p className="tabular rounded-full bg-card px-4 py-1.5 text-sm shadow-[0_0_0_1px_var(--border)]">
+              <strong className={(b.left ?? 0) < 0 ? "text-destructive" : "text-success"}>{(b.left ?? 0) < 0 ? `${money(-(b.left ?? 0))} over` : `${money(b.left ?? 0)} left`}</strong>{" "}
+              <span className="text-muted-foreground">
+                of your {money(b.budget)} shopping budget this month · starts fresh {resets}
+              </span>
+            </p>
+          )}
         </section>
 
-        <GoalForm defaultBudget={num(user.monthlyBudget)} />
+        <GoalForm defaultBudget={left && left > 0 ? left : num(user.monthlyBudget)} />
 
         <ComingUp userId={user.id} />
         <RecentPlans userId={user.id} />

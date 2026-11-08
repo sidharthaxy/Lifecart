@@ -16,7 +16,7 @@ async function Welcome() {
     <ProfileForm
       onboarding
       demoPhone={maskedPhone()}
-      user={{ name: user.name, email: user.email, monthlyBudget: num(user.monthlyBudget), shipTo: user.shipTo, prefs: user.prefs }}
+      user={{ name: user.name, email: user.email, monthlyBudget: num(user.monthlyBudget), budgetDay: user.budgetDay, shipTo: user.shipTo, prefs: user.prefs }}
     />
   );
 }

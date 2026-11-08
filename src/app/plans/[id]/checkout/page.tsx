@@ -7,7 +7,8 @@ import { PayButton } from "@/components/checkout/pay-button";
 import { IndependentBadge } from "@/components/plan/bits";
 import { latestApprovalForGoal } from "@/lib/approvals";
 import { requireUser } from "@/lib/auth/session";
-import { money, num } from "@/lib/format";
+import { money } from "@/lib/format";
+import { budgetStatus } from "@/lib/budget";
 import { getPlan } from "@/lib/plans";
 import type { ItemView } from "@/lib/totals";
 import { maskedPhone } from "@/lib/whatsapp";
@@ -63,7 +64,9 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
   const dueNow = orderTotal + subTotal;
   const belowList = unpaid.filter((i) => i.payType !== "watch" && i.offer?.wasPrice).reduce((a, i) => a + (i.offer!.wasPrice! - i.offer!.price) * i.qty, 0);
   const phone = maskedPhone();
-  const budget = num(user.monthlyBudget);
+  // Compare with what's LEFT of this month's shopping budget, not the full amount.
+  const b = await budgetStatus(user);
+  const budget = b.left != null ? Math.max(0, b.left) : null;
   const overBudget = budget != null && dueNow > budget;
   const canSplit = dueNow >= PAY_IN_4.min && dueNow <= PAY_IN_4.max;
   const nothingToPay = dueNow <= 0 && !services.length;
@@ -126,7 +129,7 @@ async function Checkout({ params }: { params: Promise<{ id: string }> }) {
               <div className="flex gap-2.5 rounded-xl bg-[#1B2740] p-3.5 text-[13px] text-[#DDE4F7]">
                 <SplitSquareHorizontal className="mt-0.5 size-4 shrink-0" aria-hidden />
                 <span>
-                  This is {money(dueNow - budget!)} over your {money(budget)} monthly budget.{" "}
+                  This is {money(dueNow - budget!)} more than the {money(budget)} left in your shopping budget this month.{" "}
                   {canSplit
                     ? `On the PayPal screen, choose Pay Later to split it into 4 interest-free payments of about ${money(dueNow / 4)}, if PayPal offers it to you.`
                     : "PayPal Pay in 4 covers $30 to $1,500, so this total is too large to split. You could move some items to price watch first."}

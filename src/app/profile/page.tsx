@@ -6,6 +6,7 @@ import { DeleteAccountButton } from "@/components/auth/delete-account";
 import { signOut, signOutEverywhere } from "@/app/auth-actions";
 import { requireUser } from "@/lib/auth/session";
 import { num } from "@/lib/format";
+import { budgetStatus } from "@/lib/budget";
 import { maskedPhone } from "@/lib/whatsapp";
 
 export const metadata = { title: "Profile · LifeCart" };
@@ -32,7 +33,7 @@ async function Profile() {
   const phone = maskedPhone();
   return (
     <div className="flex flex-col gap-6">
-      <ProfileForm demoPhone={phone} user={{ name: user.name, email: user.email, monthlyBudget: num(user.monthlyBudget), shipTo: user.shipTo, prefs: user.prefs }} />
+      <ProfileForm demoPhone={phone} budgetNow={await budgetStatus(user)} user={{ name: user.name, email: user.email, monthlyBudget: num(user.monthlyBudget), budgetDay: user.budgetDay, shipTo: user.shipTo, prefs: user.prefs }} />
 
       <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">Connected accounts</h2>

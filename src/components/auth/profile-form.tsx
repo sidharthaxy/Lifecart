@@ -4,12 +4,49 @@ import { useActionState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { saveProfile, type ProfileState } from "@/app/auth-actions";
 import type { UserPrefs } from "@/db/schema";
+import type { BudgetStatus } from "@/lib/budget";
 
 type Props = {
   onboarding?: boolean;
-  user: { name: string; email: string; monthlyBudget: number | null; shipTo: string | null; prefs: UserPrefs };
+  user: { name: string; email: string; monthlyBudget: number | null; budgetDay: number; shipTo: string | null; prefs: UserPrefs };
   demoPhone: string | null;
+  /** This budget month so far (profile only). */
+  budgetNow?: BudgetStatus;
 };
+
+const ordinal = (n: number) => {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${s}`;
+};
+const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+
+/** "This budget month": spent, left, and when it starts fresh. */
+function BudgetNow({ b }: { b: BudgetStatus }) {
+  if (b.budget == null) return null;
+  const pct = Math.min(100, Math.round((b.spent / Math.max(b.budget, 1)) * 100));
+  const over = (b.left ?? 0) < 0;
+  const lastDay = new Date(new Date(b.next).getTime() - 86_400_000).toISOString();
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-background p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-semibold">
+          This budget month <span className="font-normal text-muted-foreground">· {day(b.start)} to {day(lastDay)}</span>
+        </span>
+        <span className={`tabular text-sm font-semibold ${over ? "text-destructive" : "text-success"}`}>
+          {over ? `${usd(-(b.left ?? 0))} over` : `${usd(b.left ?? 0)} left`}
+        </span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${usd(b.spent)} of ${usd(b.budget)} spent`}>
+        <div className={`h-full rounded-full ${over ? "bg-destructive" : "bg-primary"}`} style={{ width: `${Math.max(pct, b.spent > 0 ? 3 : 0)}%` }} />
+      </div>
+      <span className="tabular text-[13px] text-muted-foreground">
+        {usd(b.spent)} spent of {usd(b.budget)}
+        {b.parts.length ? ` (${b.parts.map((p) => `${p.label.toLowerCase()} ${usd(p.amount)}`).join(", ")})` : ""}. Starts fresh on {day(b.next)}.
+      </span>
+    </div>
+  );
+}
 
 function Toggle({ name, label, hint, defaultChecked }: { name: string; label: string; hint: string; defaultChecked?: boolean }) {
   return (
@@ -25,7 +62,7 @@ function Toggle({ name, label, hint, defaultChecked }: { name: string; label: st
 
 const field = "min-h-11 rounded-[10px] border border-input bg-[#FBFCFD] px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
-export function ProfileForm({ onboarding, user, demoPhone }: Props) {
+export function ProfileForm({ onboarding, user, demoPhone, budgetNow }: Props) {
   const [state, action, pending] = useActionState<ProfileState, FormData>(saveProfile, undefined);
   const p = user.prefs;
 
@@ -60,19 +97,33 @@ export function ProfileForm({ onboarding, user, demoPhone }: Props) {
 
       <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">Money</h2>
-        <label className="flex max-w-sm flex-col gap-1.5 text-sm font-semibold">
-          Monthly shopping budget
-          <span className="flex min-h-11 items-center gap-1.5 rounded-[10px] border border-input bg-[#FBFCFD] px-3.5 focus-within:ring-2 focus-within:ring-ring/40">
-            <span className="text-muted-foreground">$</span>
-            <input name="monthlyBudget" inputMode="decimal" defaultValue={user.monthlyBudget ?? ""} placeholder="800" className="w-full bg-transparent text-[15px] outline-none" />
-            <span className="text-[13px] font-normal text-muted-foreground">/month</span>
-          </span>
-          <span className="text-xs font-normal text-muted-foreground">New plans start with this budget. Bills aren&apos;t counted.</span>
-        </label>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold">
+            Monthly shopping budget
+            <span className="flex min-h-11 items-center gap-1.5 rounded-[10px] border border-input bg-[#FBFCFD] px-3.5 focus-within:ring-2 focus-within:ring-ring/40">
+              <span className="text-muted-foreground">$</span>
+              <input name="monthlyBudget" inputMode="decimal" defaultValue={user.monthlyBudget ?? ""} placeholder="800" className="w-full bg-transparent text-[15px] outline-none" />
+              <span className="text-[13px] font-normal text-muted-foreground">/month</span>
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">For shopping only. Bills are tracked separately.</span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold">
+            Budget month starts on
+            <select name="budgetDay" defaultValue={String(user.budgetDay)} className={`${field} cursor-pointer`}>
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={d}>
+                  the {ordinal(d)} of every month
+                </option>
+              ))}
+            </select>
+            <span className="text-xs font-normal text-muted-foreground">Your budget starts fresh on this day, for example the day after payday.</span>
+          </label>
+        </div>
+        {budgetNow && <BudgetNow b={budgetNow} />}
         <Toggle
           name="payInParts"
           label="Offer to pay in parts when I'm over budget"
-          hint="If a checkout is more than your monthly budget, we'll point you to PayPal Pay in 4 (4 interest-free payments, for purchases from $30 to $1,500, if PayPal approves you)."
+          hint="If a checkout is more than what's left of your monthly budget, we'll point you to PayPal Pay in 4 (4 interest-free payments, for purchases from $30 to $1,500, if PayPal approves you)."
           defaultChecked={p.payInParts ?? true}
         />
       </section>

@@ -59,6 +59,8 @@ export async function saveProfile(_prev: ProfileState, form: FormData): Promise<
   const budget = budgetRaw ? parseBudget(budgetRaw) : null;
   if (budgetRaw && !budget) return { error: "Enter a monthly shopping budget like 800." };
   const shipTo = cleanText(form.get("shipTo"), 120) || null;
+  const dayRaw = Number(form.get("budgetDay") ?? 1);
+  const budgetDay = Number.isInteger(dayRaw) && dayRaw >= 1 && dayRaw <= 28 ? dayRaw : 1;
   const on = (k: string) => form.get(k) === "on";
   const prefs: UserPrefs = {
     ...user.prefs,
@@ -71,7 +73,7 @@ export async function saveProfile(_prev: ProfileState, form: FormData): Promise<
   const db = await getDb();
   await db
     .update(schema.users)
-    .set({ name, monthlyBudget: budget ? String(budget) : null, shipTo, prefs, ...(user.onboardedAt ? {} : { onboardedAt: new Date() }) })
+    .set({ name, monthlyBudget: budget ? String(budget) : null, budgetDay, shipTo, prefs, ...(user.onboardedAt ? {} : { onboardedAt: new Date() }) })
     .where(eq(schema.users.id, user.id));
   if (onboarding) redirect("/");
   revalidatePath("/", "layout");
