@@ -16,7 +16,7 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 6. [Payment design](#6-payment-design)
 7. [Security and guardrails](#7-security-and-guardrails)
 8. [Data model](#8-data-model)
-9. [Tech stack and sponsor tools](#9-tech-stack-and-sponsor-tools)
+9. [Tech stack](#9-tech-stack)
 10. [Run it locally](#10-run-it-locally)
 11. [Testing and dev tools](#11-testing-and-dev-tools)
 12. [Project structure](#12-project-structure)
@@ -105,6 +105,7 @@ Payments already made always stay on the Money page (until the account is delete
 | **Real PayPal sandbox payments**: orders captured, subscriptions approved and cancelled, invoices sent, refunds issued, each verified with PayPal | Payments go to **LifeCart's own sandbox merchant account**; they aren't passed on to the store or the biller |
 | **Real WhatsApp messages** to each user's own verified number (Twilio sandbox) and **real email sign-in codes** | WhatsApp uses Twilio's free sandbox: each user sends a join message first, and it lapses after ~3 days without messages |
 | Live reconciliation of every payment against PayPal | PayPal webhooks (status is checked live on page view instead) |
+| The daily alerts job as **Render Workflows** tasks (one per user, with retries), tested end to end with Render's local task server | Its first cloud run happens once the workflow service is deployed on Render |
 
 **In production, money would reach the store in one of three ways** (see [Roadmap](#13-roadmap)):
 - **Agent-ready retailers:** stores that accept orders from AI agents (for example through PayPal's agentic commerce services) get the cart and the PayPal payment directly.
@@ -159,14 +160,15 @@ flowchart LR
     Usage["Usage caps · timeouts<br/>rate limits"]
   end
 
-  DB[("Postgres<br/>PGlite locally")]
+  DB[("Postgres")]
+  WF["Render Workflows<br/>dailyAlerts → checkUser × N"]
   Groq["Groq<br/>gpt-oss-120b · gpt-oss-20b<br/>Qwen vision · Prompt Guard"]
   C3["Channel3<br/>products · price history"]
   PP["PayPal sandbox<br/>Agent Toolkit + REST"]
   TW["Twilio<br/>WhatsApp"]
   KB["Kernel<br/>cloud browser"]
   GM["Gmail SMTP<br/>sign-in codes"]
-  Cron["Scheduler<br/>POST /api/cron/daily"]
+  Cron["Render cron job<br/>POST /api/cron/daily"]
 
   UI --> Proxy --> Actions
   Actions --> Auth & Guard & Agent & Pay & Watch & Money & Coupons
@@ -178,8 +180,10 @@ flowchart LR
   Watch --> C3 & TW
   Pay --> TW
   Auth --> GM
-  Cron --> Watch
-  Auth & Agent & Pay & Watch & Money --> DB
+  Cron --> Actions
+  Actions -- "starts a run" --> WF
+  WF --> Watch
+  Auth & Agent & Pay & Watch & Money & WF --> DB
   Agent & Pay & Watch & Money -.-> Usage
 ```
 
@@ -194,7 +198,7 @@ flowchart LR
 | **Coupon finder** | On request only: web search per store in a Kernel browser, offer extraction, 12-hour cache | `src/lib/coupons.ts` |
 | **Bills** | Bills hub, insights, due-date digest | `src/lib/bills.ts` |
 | **Money** | Ledger reconciled live with PayPal, 5-minute per-user cache | `src/lib/money.ts` |
-| **Daily job** | Price watch, then bill reminders, per user, single-flight, at least 1 hour apart | `src/lib/cron.ts`, `src/app/api/cron/daily` |
+| **Daily job** | Price watch, then bill reminders, for every user. The Render cron job calls `/api/cron/daily`, which starts a **Render Workflows** run: `dailyAlerts` fans out one `checkUser` task per user (batches of 10, each on its own compute, retried twice on failure). At most one start per hour. Without Workflows configured, the app runs the same code itself | `workflows/main.ts`, `src/lib/workflows.ts`, `src/lib/cron.ts`, `src/app/api/cron/daily` |
 | **Usage** | Daily caps per provider, Groq rate-limit gate, timeouts | `src/lib/usage.ts`, `src/lib/ai.ts` |
 
 **Rendering.** Pages use Cache Components: the static shell renders instantly, and anything that reads your session or data streams in behind `<Suspense>`. The AI never runs in the browser, and no API key reaches the client.
@@ -224,6 +228,7 @@ The planner is a **fixed pipeline, not an open-ended loop**, so it can't run for
 - **Deadlines and timeouts.** Each run has a 3-minute deadline, and every external call has its own timeout (Groq 25–45 s, Channel3 12–18 s).
 - **Single-flight.** A plan is claimed atomically (`draft → running`), so a second tab follows the first run instead of starting another.
 - **Crash recovery.** A run stuck past its deadline is reclaimed.
+- **Keeps going if you leave.** You can browse other pages while the agent plans; the run finishes in the background and the plan is ready when you come back. Coupon searches work the same way.
 - **Degrades instead of failing.** Over the search budget, items get price estimates. Over the AI budget, planning pauses with a clear message.
 
 ---
@@ -322,7 +327,7 @@ Tested by `scripts/guard-test.mts` (15 of 15 passing, run as signed-in users).
 
 | Table | Holds |
 |---|---|
-| `users` | email (verified), name, monthly budget, ship-to, preferences (pay in parts, alerts, demo tools), onboarding time |
+| `users` | email (verified), name, monthly budget and the day it resets, ship-to, preferences (pay in parts, alerts, demo tools), WhatsApp number with its verification state, onboarding time |
 | `auth_codes` | hashed one-time codes, expiry, attempts |
 | `sessions` | hashed session tokens, expiry |
 | `goals` | a plan: prompt, photo note, questions and answers, title, summary, status (`draft / running / ready / blocked`), agent steps |
@@ -332,27 +337,31 @@ Tested by `scripts/guard-test.mts` (15 of 15 passing, run as signed-in users).
 | `bills` | payee, amount, average, due date, autopay mode, plan options, last reminded, paid at |
 | `approvals` | a frozen payment: kind (cart / bill / watch), lines, totals, hashed token, current step, PayPal ids, result |
 | `payments` | per-type PayPal records (subscription and invoice ids, status) |
+| `coupons` | offers found on the web per store domain (title, discount, code if shown in full, source link), reused for 12 hours |
 | `api_usage` | calls and units per provider per day, plus the provider's own reported limits |
 
-Drizzle ORM. **PGlite** (embedded Postgres) locally, and any Postgres through `DATABASE_URL` in production.
+Drizzle ORM on **Postgres** (`DATABASE_URL`), both locally and on Render. If `DATABASE_URL` is blank, the app falls back to an embedded PGlite database in `./.data`.
 
 ---
 
-## 9. Tech stack and sponsor tools
+## 9. Tech stack
+
+(sponsor tools: PayPal Agent Toolkit, Render + Render Workflows, AG Grid, Channel3, Kernel, Bryntum)
 
 | Area | Choice |
 |---|---|
 | App | **Next.js 16** (App Router, Server Actions, Cache Components, Turbopack), TypeScript, React 19 |
 | UI | Tailwind CSS v4, shadcn/ui, lucide icons |
 | Data grid | **AG Grid Community**: the plan table and the money ledger |
-| Calendar | **Bryntum Calendar** (trial): the money calendar |
-| Database | Drizzle ORM, PGlite (local) or Postgres |
+| Calendar | **Bryntum Calendar** (trial): the money calendar, loaded at runtime from `public/vendor` |
+| Database | **Postgres** with Drizzle ORM (locally Homebrew Postgres 18, started by `npm run dev:all`; an embedded PGlite fallback if `DATABASE_URL` is blank) |
 | AI | Vercel AI SDK with **Groq** (gpt-oss-120b, gpt-oss-20b, Qwen vision, Llama Prompt Guard 2) |
-| Payments | **PayPal Agent Toolkit** + PayPal REST (sandbox) |
+| Payments | **PayPal Agent Toolkit** + PayPal REST (sandbox): Orders, Subscriptions, Invoicing, Refunds |
 | Products | **Channel3**: product search, offers, 90-day price history, live prices |
 | Coupons | **Kernel** cloud browser (Playwright) for web search and coupon pages |
-| Messaging | **Twilio** WhatsApp sandbox; Gmail SMTP for sign-in codes |
-| Hosting | **Render** (web service, Postgres, cron job) |
+| Background jobs | **Render Workflows** (`@renderinc/sdk`): the daily alerts job fans out one task per user, with retries |
+| Messaging | **Twilio** WhatsApp sandbox (per-user verified numbers); Gmail SMTP for sign-in codes |
+| Hosting | **Render**: web service, Postgres, Workflows and a cron job |
 
 ---
 
@@ -361,9 +370,12 @@ Drizzle ORM. **PGlite** (embedded Postgres) locally, and any Postgres through `D
 ```bash
 npm install
 cp .env.example .env.local   # paste your keys; every variable has a comment saying where to get it
-npm run db:push              # create the tables (embedded Postgres in ./.data by default)
-npm run dev                  # http://localhost:3000
+createdb lifecart            # once; then set DATABASE_URL=postgresql://<you>@localhost:5432/lifecart
+npm run dev:all              # starts Postgres + the app at http://localhost:3000; Ctrl+C stops both
+npm run db:push              # in a second terminal, once: creates the tables
 ```
+
+`npm run dev:all` expects Homebrew Postgres 18 (`brew install postgresql@18`). Without Postgres, leave `DATABASE_URL` blank and use `npm run dev`: the app creates an embedded database in `./.data`.
 
 - **Sign in without email set up:** if `GMAIL_USER` / `GMAIL_APP_PASSWORD` are empty, the sign-in code is printed in the `npm run dev` terminal (development only).
 - **Integration status and API usage:** open `/setup` while signed in.
@@ -377,7 +389,8 @@ npm run dev                  # http://localhost:3000
 - `CHANNEL3_API_KEY`
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `TWILIO_SANDBOX_JOIN` (e.g. "join drop-particles")
 - `GMAIL_USER`, `GMAIL_APP_PASSWORD`
-- `DATABASE_URL` (blank means local PGlite)
+- `DATABASE_URL` (local or Render Postgres; blank means the embedded PGlite fallback)
+- `RENDER_API_KEY`, `RENDER_WORKFLOW_SLUG` (Render Workflows for the daily job; blank means the app runs it itself), `RENDER_USE_LOCAL_DEV` (local testing only)
 
 | Script | What it does |
 |---|---|
@@ -386,10 +399,14 @@ npm run dev                  # http://localhost:3000
 | `npm run build` / `start` | Production build and server |
 | `npm run db:push` | Sync the schema to the database |
 | `npm run db:studio` | Browse the database |
+| `npm run workflows` | Start command for the Render Workflows service (`tsx workflows/main.ts`) |
+| `npm run workflows:dev` | Run the workflow locally with Render's task server (`render workflows dev`, Render CLI 2.35+) |
 | `npm run tunnel` | Public HTTPS tunnel to localhost:3000 |
 | `npm run lint` / `typecheck` | Lint and type-check |
 
-**Daily job:** schedule `curl -X POST $APP_URL/api/cron/daily -H "Authorization: Bearer $APPROVAL_SECRET"` once a day.
+**Daily job:** a Render cron job runs `curl -X POST $APP_URL/api/cron/daily -H "Authorization: Bearer $APPROVAL_SECRET"` once a day. With `RENDER_API_KEY` and `RENDER_WORKFLOW_SLUG` set, that starts the Render Workflows run; otherwise the app does the work itself.
+
+**Render Workflows service:** Render Dashboard → New → Workflow → this repo, language Node, build `npm install`, start `npm run workflows`, and the same `DATABASE_URL`, `CHANNEL3_API_KEY`, `TWILIO_*` and `APPROVAL_SECRET` as the web service.
 
 ---
 
@@ -397,7 +414,7 @@ npm run dev                  # http://localhost:3000
 
 All in `scripts/`, run with `npx tsx --env-file=.env.local scripts/<name>`. There are two kinds:
 - **Browser tests** need the dev server running. They sign in throwaway `@example.com` accounts through the real sign-in page. Addresses on reserved test domains are never emailed; in development their code is printed in the dev server log, so these scripts take that log file as an argument.
-- **Database scripts** need `npm run dev` **stopped** first, because PGlite allows one process at a time.
+- **Database scripts** need Postgres running (`npm run dev:all` in another terminal). With the PGlite fallback, stop the app first instead, because PGlite allows one process at a time.
 
 | Script | What it checks |
 |---|---|
@@ -413,8 +430,15 @@ All in `scripts/`, run with `npx tsx --env-file=.env.local scripts/<name>`. Ther
 | `coupon-test.mts <devLog> <outDir>` | Presses Find coupons on a reusable test plan and prints what was found |
 | `coupon-probe.mts <domain>` | One Kernel session: raw web search + coupon pages for a store |
 | `clear-coupon-cache.mts` | Forgets cached coupon searches (database script) |
+| `workflow-test.mts` | Triggers `dailyAlerts` like the cron route does (needs `npm run workflows:dev`); checks it finishes, fans out per user, and isn't started twice in an hour |
+| `navigate-away-test.mts <devLog>` | Other pages load while the agent plans; the plan finishes after you leave; coupon results are saved after you leave |
+| `whatsapp-verify-test.mts <devLog> <outDir>` | WhatsApp setup: unjoined number refused, wrong code, real code verified, number removed |
+| `budget-test.mts` | Budget month dates (including year boundaries) and the spent / left maths |
+| `target-test.mts <devLog> <outDir> <planPath>` | Editing a watch target: too high refused, quick pick saved, edit on Orders & watch |
+| `copy-pglite-to-postgres.mts` | One-off: copy everything from the embedded database into Postgres |
+| `dev-all.sh` | Behind `npm run dev:all`: Postgres + app, clean shutdown on Ctrl+C |
 | `dev-watchdog.sh`, `mem-guard.sh` | Run the dev server with a memory cap |
-| `page-shot.mts`, `signed-in-shot.mts` | Screenshots at desktop and phone width |
+| `page-shot.mts`, `signed-in-shot.mts`, `file-shot.mts` | Screenshots at desktop and phone width |
 
 ---
 
@@ -441,6 +465,7 @@ src/
     watch.ts  bills.ts  money.ts  cron.ts  usage.ts
   db/schema.ts            tables
   proxy.ts                session-cookie redirect
+workflows/main.ts         Render Workflows tasks: dailyAlerts → checkUser (one per user)
 scripts/                  test and dev tools
 ```
 

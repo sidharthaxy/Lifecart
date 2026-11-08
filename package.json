@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "predev": "node scripts/copy-bryntum.mjs",
     "prebuild": "node scripts/copy-bryntum.mjs",
-    "dev:all": "bash scripts/dev-all.sh"
+    "dev:all": "bash scripts/dev-all.sh",
+    "workflows": "tsx workflows/main.ts",
+    "workflows:dev": "render workflows dev --env-file .env.local -- npx tsx workflows/main.ts"
   },
   "dependencies": {
     "@ai-sdk/groq": "^4.0.76",
@@ -24,6 +26,7 @@
     "@onkernel/sdk": "^0.139.0",
     "@paypal/agent-toolkit": "^1.11.0",
     "@paypal/react-paypal-js": "^10.6.1",
+    "@renderinc/sdk": "1.8.0",
     "ag-grid-community": "^36.3.0",
     "ag-grid-react": "^36.3.0",
     "ai": "^7.0.162",
@@ -39,6 +42,7 @@
     "react-dom": "19.3.0",
     "shadcn": "^4.23.0",
     "sonner": "^2.0.8",
+    "tsx": "^4.23.15",
     "tw-animate-css": "^1.4.0",
     "zod": "^3.25.76"
   },
@@ -55,7 +59,6 @@
     "eslint-config-next": "16.4.5",
     "puppeteer-core": "^25.16.0",
     "tailwindcss": "^4",
-    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "allowScripts": {
