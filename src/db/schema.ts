@@ -127,6 +127,15 @@ export const bills = pgTable("bills", {
   averageAmount: money("average_amount"),
   dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
   autopayMode: text("autopay_mode").notNull().default("ask"), // ask | autopay_notify | remind
+  /** Short account label shown to the user, e.g. "Prepaid plan · (415) ···0142". */
+  accountLabel: text("account_label"),
+  /** When the current period was paid (null = still due). Paying rolls dueDate to the next month. */
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  lastRemindedAt: timestamp("last_reminded_at", { withTimezone: true }),
+  /** Phone top-up plans to choose from, and what the user actually uses (for the agent's savings insight). */
+  planOptions: jsonb("plan_options").$type<{ price: number; label: string }[]>(),
+  usageNote: text("usage_note"),
+  createdAt: createdAt(),
 });
 
 export const watches = pgTable("watches", {
@@ -166,6 +175,8 @@ export type ApprovalPayload = {
   goalId: string;
   /** For price-drop approvals: the watched item and the prices that triggered the alert. */
   watch?: { itemId: string; was: number; now: number; target: number };
+  /** For bill payments: which bills this approval pays (goalId is "" for bills). */
+  bills?: { ids: string[] };
   orders: ApprovalLine[];
   orderTotal: number;
   subscriptions: ApprovalLine[];

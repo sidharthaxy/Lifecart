@@ -179,7 +179,7 @@ async function Payments() {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="font-semibold">{a.title}</span>
                   <span className="text-[13px] text-muted-foreground">
-                    {a.kind === "watch" ? "Bought after a price drop" : "Plan checkout"}
+                    {a.kind === "watch" ? "Bought after a price drop" : a.kind === "bill" ? "Bill payment" : "Plan checkout"}
                     {a.status !== "paid" ? " (partly complete: order paid, later steps not finished)" : ""} ·{" "}
                     {a.updatedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                     {p.watch ? ` · saved ${money(Math.max(0, p.watch.was - p.watch.now))}` : ""}

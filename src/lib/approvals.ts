@@ -464,15 +464,97 @@ export async function finalize(approvalId: string) {
         .where(eq(schema.offers.id, item.chosenOfferId));
   }
 
-  const lines = [
-    p.watch ? `*LifeCart*: bought at the lower price ✅ (saved ${money(Math.max(0, p.watch.was - p.watch.now))})` : "*LifeCart*: paid ✅",
-    p.orders.length ? `Order: ${money(result.capturedAmount ?? p.orderTotal)} captured with PayPal` : null,
-    p.subscriptions.length ? `Refills: ${money(p.subscriptionMonthly)}/mo subscription ${result.subscriptionStatus ? "active" : "set up"}` : null,
-    result.invoices?.length ? `${result.invoices.length} service invoice${result.invoices.length > 1 ? "s" : ""} sent to your PayPal email` : null,
-    "We'll message you tracking numbers when the stores ship.",
-  ].filter(Boolean);
+  if (p.bills?.ids.length) await markBillsPaid(p.bills.ids);
+
+  const lines = p.bills
+    ? [
+        "*LifeCart*: bill paid ✅",
+        ...p.orders.map((l) => `${l.name} (${l.merchant}): ${money(l.unit)}`),
+        `Total ${money(result.capturedAmount ?? p.orderTotal)} paid with PayPal. We'll remind you before the next due date.`,
+      ]
+    : [
+        p.watch ? `*LifeCart*: bought at the lower price ✅ (saved ${money(Math.max(0, p.watch.was - p.watch.now))})` : "*LifeCart*: paid ✅",
+        p.orders.length ? `Order: ${money(result.capturedAmount ?? p.orderTotal)} captured with PayPal` : null,
+        p.subscriptions.length ? `Refills: ${money(p.subscriptionMonthly)}/mo subscription ${result.subscriptionStatus ? "active" : "set up"}` : null,
+        result.invoices?.length ? `${result.invoices.length} service invoice${result.invoices.length > 1 ? "s" : ""} sent to your PayPal email` : null,
+        "We'll message you tracking numbers when the stores ship.",
+      ].filter(Boolean);
   await sendWhatsApp(lines.join("\n"));
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Bills
+
+/** Paid: stamp paidAt and roll the due date one month forward (monthly bills). */
+async function markBillsPaid(ids: string[]) {
+  const db = await getDb();
+  const rows = await db.select().from(schema.bills).where(inArray(schema.bills.id, ids));
+  for (const b of rows) {
+    const next = new Date(b.dueDate);
+    next.setMonth(next.getMonth() + 1);
+    await db.update(schema.bills).set({ paidAt: new Date(), dueDate: next, lastRemindedAt: null }).where(eq(schema.bills.id, b.id));
+  }
+}
+
+/**
+ * One approval that pays one or more bills as a single PayPal order (frozen amounts, single-use link).
+ * notify=true WhatsApps the link (due-date reminders); in-app "Pay" goes straight to PayPal instead.
+ */
+export async function createBillApproval(
+  billIds: string[],
+  origin: string,
+  opts: { notify: boolean; message?: (link: string) => string } = { notify: false },
+): Promise<{ token: string; link: string; whatsapp: SendResult | null } | { error: string }> {
+  const db = await getDb();
+  const user = await getDemoUser();
+  const rows = billIds.length ? await db.select().from(schema.bills).where(and(inArray(schema.bills.id, billIds), eq(schema.bills.userId, user.id))) : [];
+  const due = rows.filter((b) => !isPaidNow(b));
+  if (!due.length) return { error: "Those bills are already paid." };
+
+  const lines: ApprovalLine[] = due.map((b) => ({ itemId: b.id, name: b.name, merchant: b.payee, qty: 1, unit: round(Number(b.amount)) }));
+  const orderTotal = round(lines.reduce((a, l) => a + l.unit, 0));
+  const payload: ApprovalPayload = {
+    goalId: "",
+    orders: lines,
+    orderTotal,
+    subscriptions: [],
+    subscriptionMonthly: 0,
+    invoices: [],
+    bills: { ids: due.map((b) => b.id) },
+  };
+  // One live bill link at a time.
+  await db
+    .update(schema.approvals)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(eq(schema.approvals.kind, "bill"), inArray(schema.approvals.status, ["pending", "sent"])));
+
+  const token = randomBytes(24).toString("base64url");
+  const [approval] = await db
+    .insert(schema.approvals)
+    .values({
+      userId: user.id,
+      kind: "bill",
+      amount: String(orderTotal),
+      title: due.length === 1 ? `${due[0].name}: ${due[0].payee}` : `${due.length} bills`,
+      payload,
+      token: hash(token),
+      expiresAt: new Date(Date.now() + (opts.notify ? WATCH_LINK_TTL_MS : LINK_TTL_MS)),
+      step: "order",
+    })
+    .returning();
+  const link = `${origin}/approve/${token}`;
+  if (!opts.notify) return { token, link, whatsapp: null };
+
+  const whatsapp = await sendWhatsApp(opts.message ? opts.message(link) : `LifeCart: bills due. Pay with PayPal: ${link}`);
+  await db
+    .update(schema.approvals)
+    .set({ status: whatsapp.sent ? "sent" : "pending", whatsappMessageId: whatsapp.sent ? whatsapp.sid : null, updatedAt: new Date() })
+    .where(eq(schema.approvals.id, approval.id));
+  return { token, link, whatsapp };
+}
+
+/** A bill counts as paid if it was paid within the last 25 days (its due date has already rolled forward). */
+export const isPaidNow = (b: { paidAt: Date | null }) => Boolean(b.paidAt && Date.now() - b.paidAt.getTime() < 25 * 86_400_000);
 
 function describe(e: unknown) {
   if (e instanceof PayPalError) return `${e.message}${e.status ? ` (${e.status})` : ""}`;

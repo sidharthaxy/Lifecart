@@ -3,7 +3,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createCartApproval, startPayment } from "@/lib/approvals";
+import { createBillApproval, createCartApproval, startPayment } from "@/lib/approvals";
+import { addBill, changePhonePlan, remindDueBills } from "@/lib/bills";
+import { cleanText } from "@/lib/guard/sanitize";
 import { createGoalSafely } from "@/lib/goals";
 import { allow, clientKey } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
@@ -72,6 +74,56 @@ export async function cancelRefillsAction(paymentId: string): Promise<{ status?:
   const res = await cancelRefills(paymentId);
   revalidatePath("/orders");
   return res;
+}
+
+// ---- Bills -----------------------------------------------------------------------------------------
+
+/** "Pay" one bill, or "Pay all due this week": freeze amounts and go straight to PayPal. */
+export async function payBillsNow(billIds: string[]): Promise<PayState> {
+  const ids = (Array.isArray(billIds) ? billIds : []).filter(isId).slice(0, 20);
+  if (!ids.length) return { error: "Nothing to pay" };
+  const h = await headers();
+  const rl = allow(`pay:${clientKey(h)}`, 20, 60 * 60_000);
+  if (!rl.ok) return { error: "Too many payment attempts. Try again in a few minutes." };
+  const origin = appOrigin(h);
+  const created = await createBillApproval(ids, origin, { notify: false });
+  if ("error" in created) return { error: created.error };
+  const started = await startPayment(created.token, origin);
+  if ("error" in started) return { error: started.error };
+  redirect(started.redirect);
+}
+
+export async function switchPhonePlan(billId: string, price: number) {
+  if (!isId(billId) || typeof price !== "number") return { error: "Unknown plan" };
+  const res = await changePhonePlan(billId, price);
+  revalidatePath("/bills");
+  return res;
+}
+
+export type AddBillState = { error?: string; ok?: boolean } | undefined;
+export async function addBillAction(_prev: AddBillState, form: FormData): Promise<AddBillState> {
+  const name = cleanText(form.get("name"), 60);
+  const payee = cleanText(form.get("payee"), 80);
+  const amount = Number(String(form.get("amount") ?? "").replace(/[^0-9.]/g, ""));
+  const due = new Date(String(form.get("dueDate") ?? ""));
+  if (name.length < 2 || payee.length < 2) return { error: "Add a name and who you pay." };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 50_000) return { error: "Enter an amount between $0 and $50,000." };
+  if (Number.isNaN(due.getTime())) return { error: "Pick a due date." };
+  await addBill({ name, payee, type: String(form.get("type") ?? "other"), amount: Math.round(amount * 100) / 100, dueDate: due });
+  revalidatePath("/bills");
+  return { ok: true };
+}
+
+/** "Send reminder now" (the scheduler calls the same thing via /api/bills/remind). */
+export async function sendBillReminders(): Promise<{ message: string; link?: string }> {
+  const h = await headers();
+  const rl = allow(`remind:${clientKey(h)}`, 10, 60 * 60_000);
+  if (!rl.ok) return { message: "Too many reminders. Try again in a few minutes." };
+  const r = await remindDueBills(appOrigin(h));
+  revalidatePath("/bills");
+  if (!r.count) return { message: "Nothing due in the next 3 days that hasn't been reminded today." };
+  const sent = r.whatsapp?.sent ? "Sent one WhatsApp reminder" : `WhatsApp not sent (${r.whatsapp && !r.whatsapp.sent ? r.whatsapp.reason : "unknown"})`;
+  return { message: `${sent} for ${r.count} bill(s), with one PayPal link.`, link: r.link };
 }
 
 export type PayState = { error: string } | undefined;

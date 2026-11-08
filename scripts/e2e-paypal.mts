@@ -8,6 +8,9 @@ const args = process.argv.slice(2);
 const [planId, out = "."] = args;
 const headful = args.includes("--headful");
 const cancelRefills = args.includes("--cancel-refills");
+// Optional: start from another page and click another pay button, e.g. --path /bills --pay "^Top up"
+const startPath = args.includes("--path") ? args[args.indexOf("--path") + 1] : null;
+const payRx = new RegExp(args.includes("--pay") ? args[args.indexOf("--pay") + 1] : "^Pay with PayPal$");
 const email = process.env.PAYPAL_SANDBOX_BUYER_EMAIL?.trim();
 const password = process.env.PAYPAL_SANDBOX_BUYER_PASSWORD?.trim();
 if (!planId || !email || !password) throw new Error("usage: <planId> <outDir>; and set PAYPAL_SANDBOX_BUYER_EMAIL/PASSWORD in .env.local");
@@ -62,25 +65,51 @@ const waitFor = async (cond: () => boolean | Promise<boolean>, timeout: number, 
 };
 
 /** PayPal sandbox login (email -> Next -> password -> Log In); tolerant of the one-page variant. */
+const visible = async (p: Page, sel: string) => {
+  const el = await p.$(sel);
+  return el ? el.isVisible().catch(() => false) : false;
+};
+/** Clear a field, then type (so retries never append). */
+async function fill(p: Page, sel: string, value: string) {
+  await p.$eval(sel, (el) => {
+    (el as HTMLInputElement).value = "";
+  });
+  await p.type(sel, value, { delay: 20 });
+}
+
+/**
+ * PayPal sandbox login. Handles both variants: email -> Next -> password, or a remembered email that goes
+ * straight to the password field. Acts on whatever is VISIBLE, clearing fields first.
+ */
 async function paypalLogin(p: Page) {
-  await p.waitForSelector("#email, input[name=login_email]", { timeout: 45_000 });
-  await p.type("#email, input[name=login_email]", email!, { delay: 25 });
-  if (await p.$("#btnNext")) {
-    await p.click("#btnNext");
+  const EMAIL = "#email, input[name=login_email]";
+  const PASS = "#password, input[name=login_password]";
+  const end = Date.now() + 60_000;
+  while (Date.now() < end) {
+    if (await visible(p, PASS)) {
+      await fill(p, PASS, password!);
+      await snap(p, "paypal-login");
+      await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => null), p.click("#btnLogin")]);
+      log("logged in to PayPal sandbox");
+      return;
+    }
+    if (await visible(p, EMAIL)) {
+      await fill(p, EMAIL, email!);
+      if (await visible(p, "#btnNext")) await p.click("#btnNext");
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
   }
-  await p.waitForSelector("#password, input[name=login_password]", { visible: true, timeout: 30_000 });
-  await p.type("#password, input[name=login_password]", password!, { delay: 25 });
-  await snap(p, "paypal-login");
-  await Promise.all([p.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => null), p.click("#btnLogin")]);
-  log("logged in to PayPal sandbox");
+  throw new Error("PayPal login form not found");
 }
 
 try {
   // 1. Checkout -> Pay with PayPal
-  await page.goto(`${base}/plans/${planId}/checkout`, { waitUntil: "networkidle0" });
-  await snap(page, "checkout");
-  log("checkout page loaded");
-  if (!(await clickText(page, /^Pay with PayPal$/))) throw new Error("Pay with PayPal button not found (plan may be fully paid)");
+  await page.goto(startPath ? `${base}${startPath}` : `${base}/plans/${planId}/checkout`, { waitUntil: "networkidle0" });
+  await snap(page, "start");
+  log(`${startPath ?? "checkout"} page loaded`);
+  if (!(await clickText(page, payRx))) throw new Error(`pay button ${payRx} not found (maybe already paid)`);
   await waitFor(() => onPayPal(page), 45_000, "PayPal checkout");
   log("on PayPal: " + new URL(page.url()).pathname);
 
@@ -116,7 +145,7 @@ try {
     }
     try {
       await page.waitForNetworkIdle({ idleTime: 800, timeout: 15_000 }).catch(() => null);
-      if (await page.$("#email:not([type=hidden]), input[name=login_email]")) {
+      if ((await visible(page, "#email, input[name=login_email]")) || (await visible(page, "#password, input[name=login_password]"))) {
         await paypalLogin(page);
         continue;
       }
