@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, or, sql } from "drizzle-orm";
 import { BellRing, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { CheckPricesButton, SimulateDropButton } from "@/components/watch/watch-controls";
@@ -154,7 +154,13 @@ async function Managed() {
 async function Payments() {
   await connection();
   const db = await getDb();
-  const paid = await db.select().from(schema.approvals).where(eq(schema.approvals.status, "paid")).orderBy(desc(schema.approvals.updatedAt)).limit(20);
+  // Finished checkouts, plus any approval where money was captured even if the later steps were abandoned.
+  const paid = await db
+    .select()
+    .from(schema.approvals)
+    .where(or(eq(schema.approvals.status, "paid"), sql`${schema.approvals.result}->>'captureId' is not null`))
+    .orderBy(desc(schema.approvals.updatedAt))
+    .limit(20);
   return (
     <section aria-labelledby="payments" className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
       <h2 id="payments" className="text-lg font-semibold">
@@ -173,7 +179,9 @@ async function Payments() {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="font-semibold">{a.title}</span>
                   <span className="text-[13px] text-muted-foreground">
-                    {a.kind === "watch" ? "Bought after a price drop" : "Plan checkout"} · {a.updatedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                    {a.kind === "watch" ? "Bought after a price drop" : "Plan checkout"}
+                    {a.status !== "paid" ? " (partly complete: order paid, later steps not finished)" : ""} ·{" "}
+                    {a.updatedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                     {p.watch ? ` · saved ${money(Math.max(0, p.watch.was - p.watch.now))}` : ""}
                   </span>
                   <span className="text-xs text-muted-foreground">

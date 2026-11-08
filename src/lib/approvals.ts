@@ -61,7 +61,17 @@ export async function createCartApproval(
     qty: i.kind === "service" ? 1 : i.qty,
     unit: round(i.offer?.price ?? i.estimatedPrice ?? 0),
   });
-  const open = plan.items.filter((i) => !i.purchased); // never charge for something already bought
+  // Never charge for something already bought. Backstop: also exclude items whose PayPal order was already
+  // captured in an earlier approval for this plan (covers flows abandoned after the order step).
+  const db0 = await getDb();
+  const captured = await db0
+    .select({ payload: schema.approvals.payload })
+    .from(schema.approvals)
+    .where(and(sql`${schema.approvals.payload}->>'goalId' = ${goalId}`, sql`${schema.approvals.result}->>'captureId' is not null`));
+  const capturedIds = new Set(captured.flatMap((c) => c.payload.orders.map((l) => l.itemId)));
+  const repair = plan.items.filter((i) => !i.purchased && capturedIds.has(i.id)).map((i) => i.id);
+  if (repair.length) await db0.update(schema.planItems).set({ purchasedAt: new Date() }).where(inArray(schema.planItems.id, repair));
+  const open = plan.items.filter((i) => !i.purchased && !capturedIds.has(i.id));
   const orders = open.filter((i) => i.payType === "order").map(line).filter((l) => l.unit > 0);
   const subscriptions = open.filter((i) => i.payType === "subscription").map(line).filter((l) => l.unit > 0);
   const invoices = open
@@ -335,6 +345,8 @@ export async function handleReturn(token: string, step: string, q: URLSearchPara
         result: { ...(a.result ?? {}), subscriptionStatus: s.status },
       });
       await db.insert(schema.payments).values({ approvalId: a.id, rail: "subscription", paypalId: subId, amount: String(a.payload.subscriptionMonthly), status: s.status.toLowerCase() });
+      const subIds = a.payload.subscriptions.map((l) => l.itemId);
+      if (subIds.length) await db.update(schema.planItems).set({ purchasedAt: new Date() }).where(inArray(schema.planItems.id, subIds));
       await finalize(a.id);
       return u.page;
     } catch (e) {
@@ -374,6 +386,10 @@ async function settleOrder(a: Approval, token: string, origin: string): Promise<
     const result: ApprovalResult = { ...(a.result ?? {}), captureId, capturedAmount: total };
     await claimStep(a.id, "capturing", next, { status: "approved", payerEmail: o.payer?.email_address ?? null, result, error: null });
     await db.insert(schema.payments).values({ approvalId: a.id, rail: "order", paypalId: id, amount: String(total), status: "captured" });
+    // Bought the moment the money is captured, so a later checkout can never charge these items again,
+    // even if the user abandons the subscription/invoice steps.
+    const orderIds = a.payload.orders.map((l) => l.itemId);
+    if (orderIds.length) await db.update(schema.planItems).set({ purchasedAt: new Date() }).where(inArray(schema.planItems.id, orderIds));
     if (next === "subscription") {
       const fresh = await getApprovalByToken(token);
       const s = fresh ? await startPayment(token, origin) : { error: "missing" };
