@@ -175,3 +175,16 @@ export async function remindDueBills(origin: string, userId: string): Promise<{ 
     .where(or(...rows.map((b) => eq(schema.bills.id, b.id))));
   return { count: rows.length, whatsapp: res.whatsapp, link: res.link };
 }
+
+/** Delete a bill. Reminders stop; payments already made stay on the Money page. */
+export async function deleteBill(billId: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  const db = await getDb();
+  const gone = await db.delete(schema.bills).where(and(eq(schema.bills.id, billId), eq(schema.bills.userId, userId))).returning();
+  if (!gone.length) return { error: "Bill not found." };
+  // Retire unpaid payment links that include this bill.
+  await db
+    .update(schema.approvals)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(eq(schema.approvals.userId, userId), eq(schema.approvals.kind, "bill"), sql`${schema.approvals.payload}->'bills'->'ids' ? ${billId}`, sql`${schema.approvals.status} in ('pending','sent')`));
+  return { ok: true };
+}

@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { BellRing, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
-import { CheckPricesButton, SimulateDropButton } from "@/components/watch/watch-controls";
+import { CheckPricesButton, RemoveWatchButton, SimulateDropButton } from "@/components/watch/watch-controls";
 import { getDb, schema } from "@/db";
 import { requireUser } from "@/lib/auth/session";
 import { money, num } from "@/lib/format";
@@ -75,6 +75,7 @@ async function Watchlist() {
                   <span className={hit ? "rounded-full bg-success px-2.5 py-1 text-xs font-semibold text-white" : "rounded-full bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning"}>
                     {hit ? "Target hit" : "Watching"}
                   </span>
+                  <RemoveWatchButton itemId={item.id} name={item.name} />
                 </div>
                 <div className="flex items-end justify-between gap-3">
                   <span className="flex flex-col">

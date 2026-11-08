@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { CheckCircle2, Mail, MessageCircle, Wallet } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { ProfileForm } from "@/components/auth/profile-form";
+import { DeleteAccountButton } from "@/components/auth/delete-account";
 import { signOut, signOutEverywhere } from "@/app/auth-actions";
 import { requireUser } from "@/lib/auth/session";
 import { num } from "@/lib/format";
@@ -59,6 +60,12 @@ async function Profile() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-2xl border border-destructive/25 bg-card p-6">
+        <h2 className="text-lg font-semibold">Delete account</h2>
+        <p className="text-sm text-muted-foreground">Removes your account and everything in it from LifeCart.</p>
+        <DeleteAccountButton />
       </section>
     </div>
   );

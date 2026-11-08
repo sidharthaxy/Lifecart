@@ -144,11 +144,25 @@ export const priceSnapshots = pgTable("price_snapshots", {
   source: text("source").notNull().default("live"),
 });
 
+/**
+ * Offers found on the web for a store (by domain), when a user presses "Find coupons". Shared across users
+ * (it's public web data, not personal) and reused for 12 hours so the same store isn't searched again.
+ */
 export const coupons = pgTable("coupons", {
   id: id(),
+  /** Store domain, e.g. "chewy.com". */
+  domain: text("domain").notNull().default(""),
   merchant: text("merchant").notNull(),
-  code: text("code").notNull(),
+  /** e.g. "Take 15% off your order". */
+  title: text("title").notNull().default(""),
+  /** e.g. "15% off", "$20 off". */
+  discountText: text("discount_text"),
+  /** Only when the page showed the full code (checked to appear verbatim on the source page). */
+  code: text("code"),
   terms: text("terms"),
+  expires: text("expires"),
+  sourceUrl: text("source_url"),
+  sourceName: text("source_name"),
   discount: money("discount"),
   verified: boolean("verified").notNull().default(false),
   status: text("status").notNull().default("untested"), // worked | expired | not_needed | untested

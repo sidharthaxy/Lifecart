@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { Search } from "lucide-react";
-import { moveToWatch, selectOffer } from "@/app/actions";
+import { moveToWatch, removePlanItem, selectOffer } from "@/app/actions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { money } from "@/lib/format";
 import { computeTotals, type ItemView } from "@/lib/totals";
 import { ItemSheet } from "./item-sheet";
@@ -13,11 +14,14 @@ export function PlanWorkspace({
   initialItems,
   budget,
   initialSelected,
+  extra,
 }: {
   goalId: string;
   initialItems: ItemView[];
   budget: number | null;
   initialSelected?: string | null;
+  /** Shown under "How you'll pay" (the coupon finder). */
+  extra?: ReactNode;
 }) {
   const [items, setItems] = useState(initialItems);
   const [selected, setSelected] = useState<string | null>(initialSelected ?? null);
@@ -64,6 +68,18 @@ export function PlanWorkspace({
     }
   };
 
+  // Remove an item: ask first, and offer price watch as the gentler option for products.
+  const [toDelete, setToDelete] = useState<string | null>(null);
+  const deleting = items.find((i) => i.id === toDelete) ?? null;
+  const removeItem = async () => {
+    if (!deleting) return;
+    const res = await removePlanItem(deleting.id);
+    if (res.error) return res;
+    setItems((prev) => prev.filter((i) => i.id !== deleting.id));
+    if (selected === deleting.id) setSelected(null);
+    return res;
+  };
+
   const r = totals.rails;
   return (
     <div className="flex flex-wrap items-start gap-6">
@@ -80,7 +96,7 @@ export function PlanWorkspace({
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[860px]">
-            <PlanGrid items={items} onSelect={setSelected} onWatch={watch} busy={busy} quickFilter={filter} />
+            <PlanGrid items={items} onSelect={setSelected} onWatch={watch} onDelete={setToDelete} busy={busy} quickFilter={filter} />
           </div>
         </div>
         <p className="border-t border-border px-6 py-3 text-xs text-muted-foreground">Click a row to compare offers and price history. Watch takes an item out of today&apos;s total until its price drops.</p>
@@ -161,7 +177,31 @@ export function PlanWorkspace({
           </a>
           <span className="text-center text-xs text-muted-foreground">You&apos;ll confirm with PayPal before anything is charged.</span>
         </section>
+        {extra}
       </aside>
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title={deleting ? `Remove ${deleting.name}?` : "Remove item?"}
+        confirmLabel="OK, remove"
+        body={
+          <>
+            <span>It will be taken off this plan and out of your checkout.</span>
+            {deleting?.kind !== "service" && deleting?.payType !== "watch" && (
+              <span>
+                <strong className="text-foreground">Not sure yet?</strong> Move it to price watch instead. We&apos;ll message you when the price drops, and nothing is charged until then.
+              </span>
+            )}
+          </>
+        }
+        onConfirm={removeItem}
+        extra={
+          deleting && deleting.kind !== "service" && deleting.payType !== "watch"
+            ? { label: "Move to price watch", onClick: async () => { await watch(deleting.id, true); } }
+            : undefined
+        }
+      />
 
       <ItemSheet item={item} onClose={() => setSelected(null)} onUse={useOffer} onWatch={(on) => item && watch(item.id, on)} />
     </div>

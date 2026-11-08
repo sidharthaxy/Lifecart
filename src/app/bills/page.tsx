@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { requireUser } from "@/lib/auth/session";
 import { CheckCircle2, Droplet, Home, type LucideIcon, Receipt, Smartphone, Tv, Wifi, Zap } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
-import { AddBillForm, PayBillsButton, PlanPicker, RemindButton, SampleBillsButton, SwitchPlanButton } from "@/components/bills/bill-controls";
+import { AddBillForm, DeleteBillButton, PayBillsButton, PlanPicker, RemindButton, SampleBillsButton, SwitchPlanButton } from "@/components/bills/bill-controls";
 import { insights, listBills, type BillView } from "@/lib/bills";
 import { money } from "@/lib/format";
 import { maskedPhone } from "@/lib/whatsapp";
@@ -117,7 +117,10 @@ async function BillsHub() {
                     <span className={due.tone}>{due.text}</span>
                     <span className="text-xs text-muted-foreground">{MODE[b.autopayMode] ?? ""}</span>
                   </span>
-                  <span className="ml-auto">{b.paid ? <span className="rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">Paid ✓</span> : <PayBillsButton ids={[b.id]} label="Pay" />}</span>
+                  <span className="ml-auto flex items-center gap-1">
+                    {b.paid ? <span className="rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">Paid ✓</span> : <PayBillsButton ids={[b.id]} label="Pay" />}
+                    <DeleteBillButton id={b.id} name={b.name} />
+                  </span>
                 </li>
               );
             })}

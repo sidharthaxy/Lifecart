@@ -3,6 +3,8 @@
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { BellRing, ExternalLink, Loader2, Lock, Plus } from "lucide-react";
+import { DeleteButton } from "@/components/confirm-dialog";
+import { removeBill } from "@/app/actions";
 import { addBillAction, addSampleBillsAction, payBillsNow, sendBillReminders, switchPhonePlan, type AddBillState, type PayState } from "@/app/actions";
 import { money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -206,5 +208,23 @@ export function SampleBillsButton() {
         </p>
       )}
     </div>
+  );
+}
+
+/** Delete a bill (asks first). */
+export function DeleteBillButton({ id, name }: { id: string; name: string }) {
+  return (
+    <DeleteButton
+      label={`Delete ${name}`}
+      title={`Delete ${name}?`}
+      confirmLabel="OK, delete bill"
+      body={
+        <>
+          <span>We&apos;ll stop tracking it and stop sending reminders for it.</span>
+          <span>Payments you already made stay on your Money page.</span>
+        </>
+      }
+      onConfirm={() => removeBill(id)}
+    />
   );
 }

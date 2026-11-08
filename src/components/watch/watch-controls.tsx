@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
-import { runWatchCheck, type WatchCheckState } from "@/app/actions";
+import { removePlanItem, runWatchCheck, type WatchCheckState } from "@/app/actions";
+import { DeleteButton } from "@/components/confirm-dialog";
 
 /** "Check prices now" for all watched items. */
 export function CheckPricesButton() {
@@ -67,5 +68,28 @@ function Result({ state }: { state: WatchCheckState }) {
         </a>
       )}
     </div>
+  );
+}
+
+/** Stop watching an item by removing it from its plan (asks first). */
+export function RemoveWatchButton({ itemId, name }: { itemId: string; name: string }) {
+  const router = useRouter();
+  return (
+    <DeleteButton
+      label={`Stop watching ${name}`}
+      title={`Stop watching ${name}?`}
+      confirmLabel="OK, remove it"
+      body={
+        <>
+          <span>It will be removed from your plan and we&apos;ll stop checking its price.</span>
+          <span>Want to buy it now instead? Open the plan and press Buy now on it.</span>
+        </>
+      }
+      onConfirm={async () => {
+        const res = await removePlanItem(itemId);
+        if (!res.error) router.refresh();
+        return res;
+      }}
+    />
   );
 }

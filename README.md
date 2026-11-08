@@ -37,6 +37,11 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 - **Asks before it plans.** Zero to three tap-to-answer follow-up questions, and none at all for specific requests.
 - **A complete, budgeted plan.** Every item comes with a reason, is matched to a real store listing (Channel3) and checked against **90-day price history**. Independent stores are flagged when their prices are close.
 - **Plan workspace.** An AG Grid table grouped by category, with a budget slider, an item drawer with alternatives and price history, and a **Watch / Buy now** button on every row.
+- **Coupon finder (only when you press it).** "Find coupons" searches the web for current promo codes and deals for the stores in your plan:
+  - A **Kernel** cloud browser searches for each store and reads coupon sites, with one tab per store, running in parallel.
+  - The AI pulls out the offers. Each offer is linked to the page it came from and labelled "found on the web, not tested".
+  - About 25–50 seconds, and results are reused for 12 hours.
+- **Remove anything, with a confirmation.** Every unpaid plan item has a delete icon. The pop-up offers **Move to price watch** as the gentler option.
 
 ### Checkout with PayPal
 - **One checkout, the right PayPal payment type for each item:**
@@ -65,6 +70,17 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 ### Orders and refills
 - Live status of every refills subscription and service invoice from PayPal.
 - Cancel refills from the app.
+
+### Deleting things (always with an OK / Cancel pop-up)
+| Where | What it does |
+|---|---|
+| Plan items | Removes the item; offers price watch instead. Items already paid for can't be deleted |
+| Plans (plan page and Plans list) | Removes the plan, its items and price watches; expires its unpaid payment links. Blocked while the agent is still planning, or while its monthly refills are active (cancel them first, so PayPal stops charging) |
+| Price watch (Orders & watch) | Stops watching by removing the item |
+| Bills | Removes the bill and stops its reminders; expires unpaid payment links for it |
+| Account (Profile) | Deletes the account and everything in it. Blocked while monthly refills are active |
+
+Payments already made always stay on the Money page (until the account is deleted) and in PayPal.
 
 ---
 
@@ -125,6 +141,7 @@ flowchart LR
     Agent["Planning agent<br/>fixed pipeline"]
     Pay["Payments<br/>approval state machine"]
     Watch["Price watch · Bill reminders"]
+    Coupons["Coupon finder<br/>on request"]
     Money["Money ledger<br/>live reconciliation"]
     Usage["Usage caps · timeouts<br/>rate limits"]
   end
@@ -134,13 +151,15 @@ flowchart LR
   C3["Channel3<br/>products · price history"]
   PP["PayPal sandbox<br/>Agent Toolkit + REST"]
   TW["Twilio<br/>WhatsApp"]
+  KB["Kernel<br/>cloud browser"]
   GM["Gmail SMTP<br/>sign-in codes"]
   Cron["Scheduler<br/>POST /api/cron/daily"]
 
   UI --> Proxy --> Actions
-  Actions --> Auth & Guard & Agent & Pay & Watch & Money
+  Actions --> Auth & Guard & Agent & Pay & Watch & Money & Coupons
   Guard --> Groq
   Agent --> Groq & C3
+  Coupons --> KB & Groq
   Pay --> PP
   Money --> PP
   Watch --> C3 & TW
@@ -159,6 +178,7 @@ flowchart LR
 | **Planning agent** | Questions, plan, offer matching, price history | `src/lib/agent/` |
 | **Payments** | Orders, subscriptions, invoices, refunds through the PayPal Agent Toolkit; the approval state machine | `src/lib/paypal.ts`, `src/lib/approvals.ts` |
 | **Price watch** | Live price per store, real-drop detection, one digest per run | `src/lib/watch.ts` |
+| **Coupon finder** | On request only: web search per store in a Kernel browser, offer extraction, 12-hour cache | `src/lib/coupons.ts` |
 | **Bills** | Bills hub, insights, due-date digest | `src/lib/bills.ts` |
 | **Money** | Ledger reconciled live with PayPal, 5-minute per-user cache | `src/lib/money.ts` |
 | **Daily job** | Price watch, then bill reminders, per user, single-flight, at least 1 hour apart | `src/lib/cron.ts`, `src/app/api/cron/daily` |
@@ -246,7 +266,7 @@ Every piece of user text (requests, answers, photo descriptions) and third-party
 | 2. Injection classifier | **Llama Prompt Guard 2**: a score of 0.85 or more is blocked | `guard/check.ts` |
 | 3. Scope and safety policy | **gpt-oss-20b** applies a written policy: allow / out of scope / prohibited / manipulation, with a self-harm response that gives the 988 crisis line. **Fails closed.** "Write me a bedtime story" is politely declined | `guard/policy.ts` |
 | 4. Prompt fencing | Untrusted text goes inside randomly tagged data blocks, and the system prompts say never to follow instructions inside them | `agent/planner.ts` |
-| 5. Output checks | Zod schemas bound item counts and prices; a prohibited-item filter catches anything that slips through; the model never produces URLs or payment actions | `agent/schemas.ts`, `agent/run.ts` |
+| 5. Output checks | Zod schemas bound item counts and prices; a prohibited-item filter catches anything that slips through; the model never produces URLs or payment actions. Coupon pages from the web are fenced the same way; a code is kept only if it appears verbatim on its source page, and source links come from our own list, never the model | `agent/schemas.ts`, `agent/run.ts` |
 | 6. Architecture | The AI has **no tool that moves money**; payments need the user's approval on PayPal | `lib/approvals.ts` |
 
 Tested by `scripts/guard-test.mts` (15 of 15 passing, run as signed-in users).
@@ -277,7 +297,7 @@ Tested by `scripts/guard-test.mts` (15 of 15 passing, run as signed-in users).
 
 - A Groq **rate-limit gate** reads the `x-ratelimit-*` headers and waits rather than hitting 429 errors.
 - Live PayPal lookups are capped per page view (8 on Orders, 30 on Money) and cached for 5 minutes on Money.
-- Per-user rate limits on payments, price checks, refreshes and bill changes.
+- Per-user rate limits on payments, price checks, refreshes, bill changes and coupon searches (5 per hour, one Kernel session each).
 
 ### Secrets
 - All keys live in `.env.local` (gitignored) or the host's environment. Nothing secret is sent to the browser.
@@ -317,6 +337,7 @@ Drizzle ORM. **PGlite** (embedded Postgres) locally, and any Postgres through `D
 | AI | Vercel AI SDK with **Groq** (gpt-oss-120b, gpt-oss-20b, Qwen vision, Llama Prompt Guard 2) |
 | Payments | **PayPal Agent Toolkit** + PayPal REST (sandbox) |
 | Products | **Channel3**: product search, offers, 90-day price history, live prices |
+| Coupons | **Kernel** cloud browser (Playwright) for web search and coupon pages |
 | Messaging | **Twilio** WhatsApp sandbox; Gmail SMTP for sign-in codes |
 | Hosting | **Render** (web service, Postgres, cron job) |
 
@@ -374,6 +395,10 @@ All in `scripts/`, run with `npx tsx --env-file=.env.local scripts/<name>`. Ther
 | `wipe-data.mts` | Fresh start: deletes all user data (dry run by default) |
 | `delete-plan.mts` | Deletes one plan but keeps its payment records |
 | `refund-duplicates.mts` | Finds and refunds duplicate sandbox captures (dry run by default) |
+| `features-test.mts <devLog> <outDir>` | Builds a real plan, runs Find coupons, then every delete flow (item, move to watch, stop watching, bill, plan, account) |
+| `coupon-test.mts <devLog> <outDir>` | Presses Find coupons on a reusable test plan and prints what was found |
+| `coupon-probe.mts <domain>` | One Kernel session: raw web search + coupon pages for a store |
+| `clear-coupon-cache.mts` | Forgets cached coupon searches (database script) |
 | `dev-watchdog.sh`, `mem-guard.sh` | Run the dev server with a memory cap |
 | `page-shot.mts`, `signed-in-shot.mts` | Screenshots at desktop and phone width |
 
@@ -414,7 +439,7 @@ scripts/                  test and dev tools
 3. **Each user's own WhatsApp number**, verified with a code, instead of the shared demo line.
 4. **PayPal webhooks** for capture, refund and subscription events, instead of checking live on page view.
 5. **Rules for small refills**, such as "auto-approve refills under $40", within limits you set.
-6. **Coupon checks** in a cloud browser (Kernel) before checkout.
+6. **Test and apply coupon codes automatically** when the order is placed with the store (most coupon sites hide full codes behind a click, so today LifeCart links to them).
 
 ---
 

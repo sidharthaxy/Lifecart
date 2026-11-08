@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Trash2 } from "lucide-react";
 import { AgGridReact, type CustomCellRendererProps } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type RowClassParams } from "ag-grid-community";
 import { money } from "@/lib/format";
@@ -102,7 +103,7 @@ function PriceCell({ data }: CustomCellRendererProps<Row>) {
   );
 }
 
-type GridContext = { onWatch: (id: string, on: boolean) => void; busy: string | null };
+type GridContext = { onWatch: (id: string, on: boolean) => void; onDelete: (id: string) => void; busy: string | null };
 
 function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, GridContext>) {
   if (!data || isGroup(data)) return null;
@@ -112,11 +113,26 @@ function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, Gri
         <span className="rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">Bought ✓</span>
       </div>
     );
-  if (data.kind === "service") return null;
   const watching = data.payType === "watch";
   const busy = context?.busy === data.id;
+  const remove = (
+    <button
+      type="button"
+      disabled={busy}
+      aria-label={`Remove ${data.name} from this plan`}
+      title="Remove from plan"
+      onClick={(e) => {
+        e.stopPropagation(); // don't open the drawer
+        context?.onDelete(data.id);
+      }}
+      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+    >
+      <Trash2 className="size-4" aria-hidden />
+    </button>
+  );
+  if (data.kind === "service") return <div className="flex h-full items-center justify-end">{remove}</div>;
   return (
-    <div className="flex h-full items-center justify-end">
+    <div className="flex h-full items-center justify-end gap-1">
       <button
         type="button"
         disabled={busy}
@@ -133,6 +149,7 @@ function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, Gri
       >
         {busy ? "…" : watching ? "Buy now" : "Watch"}
       </button>
+      {remove}
     </div>
   );
 }
@@ -151,16 +168,18 @@ export function PlanGrid({
   items,
   onSelect,
   onWatch,
+  onDelete,
   busy = null,
   quickFilter,
 }: {
   items: ItemView[];
   onSelect: (id: string) => void;
   onWatch: (id: string, on: boolean) => void;
+  onDelete: (id: string) => void;
   busy?: string | null;
   quickFilter?: string;
 }) {
-  const context = useMemo<GridContext>(() => ({ onWatch, busy }), [onWatch, busy]);
+  const context = useMemo<GridContext>(() => ({ onWatch, onDelete, busy }), [onWatch, onDelete, busy]);
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     let last = "";
@@ -181,7 +200,7 @@ export function PlanGrid({
       { headerName: "Price history", flex: 1, minWidth: 120, cellRenderer: HistoryCell },
       { headerName: "Pays as", width: 118, cellRenderer: PayCell },
       { headerName: "Price", width: 112, cellRenderer: PriceCell, headerClass: "ag-right-aligned-header" },
-      { headerName: "", colId: "action", width: 112, cellRenderer: ActionCell },
+      { headerName: "", colId: "action", width: 150, cellRenderer: ActionCell },
     ],
     [],
   );

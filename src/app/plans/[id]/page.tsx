@@ -6,6 +6,9 @@ import { Check } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { PlanRunner } from "@/components/plan/plan-runner";
 import { PlanWorkspace } from "@/components/plan/plan-workspace";
+import { CouponFinder } from "@/components/plan/coupon-finder";
+import { DeletePlanButton } from "@/components/plan/delete-plan-button";
+import { couponsForPlan } from "@/lib/coupons";
 import { getPlan } from "@/lib/plans";
 
 async function PlanContent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -25,6 +28,7 @@ async function PlanContent({ params, searchParams }: { params: Promise<{ id: str
         <Link href="/" className="self-start font-semibold">
           Start a different plan
         </Link>
+        <span className="self-start"><DeletePlanButton goalId={goal.id} title="this request" goTo="/plans" text="Delete" /></span>
       </section>
     );
 
@@ -46,6 +50,7 @@ async function PlanContent({ params, searchParams }: { params: Promise<{ id: str
             <h1 className="text-[34px] font-extrabold leading-tight">{goal.title}</h1>
             {goal.summary && <p className="max-w-3xl text-muted-foreground">{goal.summary}</p>}
           </div>
+          <DeletePlanButton goalId={goal.id} title={goal.title ?? "this plan"} goTo="/plans" text="Delete plan" />
         </div>
         <div className="flex flex-wrap gap-2">
           {(goal.context ?? []).map((c) => (
@@ -76,7 +81,13 @@ async function PlanContent({ params, searchParams }: { params: Promise<{ id: str
         </section>
       ) : null}
 
-      <PlanWorkspace goalId={goal.id} initialItems={items} budget={goal.budgetCap} initialSelected={itemParam} />
+      <PlanWorkspace
+        goalId={goal.id}
+        initialItems={items}
+        budget={goal.budgetCap}
+        initialSelected={itemParam}
+        extra={<CouponFinder goalId={goal.id} initial={await couponsForPlan(goal.id, user.id)} />}
+      />
     </div>
   );
 }

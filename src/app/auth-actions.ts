@@ -77,3 +77,14 @@ export async function saveProfile(_prev: ProfileState, form: FormData): Promise<
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+/** Delete the account and everything in it (blocked while refills are active). */
+export async function deleteMyAccount(): Promise<{ error?: string }> {
+  const user = await getSessionUser();
+  if (!user) return { error: "Please sign in again." };
+  const { deleteAccount } = await import("@/lib/users");
+  const res = await deleteAccount(user.id);
+  if ("error" in res) return { error: res.error };
+  await endSession();
+  redirect("/");
+}

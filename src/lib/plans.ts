@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { isIndependent } from "./channel3";
 import { num } from "./format";
@@ -138,4 +138,45 @@ export async function setItemRail(itemId: string, watch: boolean, target: number
   const payType = item.cadence === "monthly" ? ("subscription" as const) : ("order" as const);
   await db.update(schema.planItems).set({ payType, priority: "now", targetPrice: null }).where(eq(schema.planItems.id, itemId));
   return { payType, targetPrice: null };
+}
+
+/** Refills subscriptions from this plan that PayPal may still charge (must be cancelled before deleting the plan). */
+async function activeRefills(userId: string, goalId?: string) {
+  const db = await getDb();
+  const rows = await db
+    .select({ status: schema.payments.status, goalId: sql<string>`${schema.approvals.payload}->>'goalId'` })
+    .from(schema.payments)
+    .innerJoin(schema.approvals, eq(schema.approvals.id, schema.payments.approvalId))
+    .where(and(eq(schema.approvals.userId, userId), eq(schema.payments.rail, "subscription")));
+  return rows.filter((r) => !["cancelled", "canceled", "expired", "suspended"].includes(r.status.toLowerCase()) && (!goalId || r.goalId === goalId)).length;
+}
+export { activeRefills };
+
+/** Remove one item from a plan (not ones already paid for). Its offers and price history go with it. */
+export async function deletePlanItem(itemId: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  const item = await ownedItem(itemId, userId);
+  if (!item) return { error: "Item not found." };
+  if (item.purchasedAt) return { error: "This item is already paid for, so it stays on your plan." };
+  const db = await getDb();
+  await db.delete(schema.planItems).where(eq(schema.planItems.id, itemId));
+  return { ok: true };
+}
+
+/**
+ * Delete a whole plan with its items, offers and price watches. Payments already made stay on the Money page.
+ * Blocked while the agent is still planning, or while a refills subscription from it is active.
+ */
+export async function deletePlan(goalId: string, userId: string): Promise<{ ok: true } | { error: string }> {
+  const db = await getDb();
+  const [goal] = await db.select().from(schema.goals).where(and(eq(schema.goals.id, goalId), eq(schema.goals.userId, userId)));
+  if (!goal) return { error: "Plan not found." };
+  if (goal.status === "running") return { error: "The agent is still working on this plan. Try again in a minute." };
+  if (await activeRefills(userId, goalId)) return { error: "This plan has active monthly refills. Cancel them in Orders & watch first, so PayPal stops charging." };
+  // Retire any unpaid payment links for this plan so they can't be used afterwards.
+  await db
+    .update(schema.approvals)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(eq(schema.approvals.userId, userId), sql`${schema.approvals.payload}->>'goalId' = ${goalId}`, inArray(schema.approvals.status, ["pending", "sent"])));
+  await db.delete(schema.goals).where(eq(schema.goals.id, goalId));
+  return { ok: true };
 }

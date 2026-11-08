@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createBillApproval, createCartApproval, startPayment } from "@/lib/approvals";
 import { actionUser } from "@/lib/auth/session";
-import { addBill, addSampleBills, changePhonePlan, remindDueBills } from "@/lib/bills";
+import { addBill, addSampleBills, changePhonePlan, deleteBill, remindDueBills } from "@/lib/bills";
+import { findCoupons, type StoreCoupons } from "@/lib/coupons";
 import { cleanText } from "@/lib/guard/sanitize";
 import { createGoalSafely } from "@/lib/goals";
 import { allow } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
-import { chooseOffer, setItemRail } from "@/lib/plans";
+import { chooseOffer, deletePlan, deletePlanItem, setItemRail } from "@/lib/plans";
 import { checkWatches } from "@/lib/watch";
 import { cancelRefills } from "@/lib/manage";
 
@@ -185,4 +186,55 @@ export async function refreshMoney() {
   const { clearMoneyCache } = await import("@/lib/money");
   clearMoneyCache(user.id);
   revalidatePath("/money");
+}
+
+// ---- Coupons and deleting things ---------------------------------------------------------------------
+
+export type CouponState = { stores?: StoreCoupons[]; searched?: number; error?: string } | undefined;
+
+/** "Find coupons" on a plan: only ever runs when the user presses the button. */
+export async function findCouponsAction(goalId: string): Promise<CouponState> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(goalId)) return { error: "Unknown plan" };
+  const rl = allow(`coupons:${user.id}`, 5, 60 * 60_000);
+  if (!rl.ok) return { error: `You've searched for coupons a few times already. Try again in ${Math.ceil(rl.retryInSec / 60)} minutes.` };
+  return findCoupons(goalId, user.id);
+}
+
+export type DeleteState = { ok?: boolean; error?: string };
+
+/** Remove one item from a plan (plan page, and price watch on the Orders page). */
+export async function removePlanItem(itemId: string): Promise<DeleteState> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(itemId)) return { error: "Unknown item" };
+  const res = await deletePlanItem(itemId, user.id);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/orders");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function removePlan(goalId: string, opts: { redirectTo?: "/plans" } = {}): Promise<DeleteState> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(goalId)) return { error: "Unknown plan" };
+  const res = await deletePlan(goalId, user.id);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/plans");
+  revalidatePath("/");
+  if (opts.redirectTo) redirect(opts.redirectTo);
+  return { ok: true };
+}
+
+export async function removeBill(billId: string): Promise<DeleteState> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(billId)) return { error: "Unknown bill" };
+  const res = await deleteBill(billId, user.id);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/bills");
+  revalidatePath("/");
+  return { ok: true };
 }
