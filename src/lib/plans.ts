@@ -180,3 +180,22 @@ export async function deletePlan(goalId: string, userId: string): Promise<{ ok: 
   await db.delete(schema.goals).where(eq(schema.goals.id, goalId));
   return { ok: true };
 }
+
+/**
+ * Set your own target price for a watched item. It must be below today's price (otherwise it would "hit" at once)
+ * and at least $1. Returns the saved target, rounded to cents.
+ */
+export async function setWatchTarget(itemId: string, target: number, userId: string): Promise<{ targetPrice: number } | { error: string }> {
+  const item = await ownedItem(itemId, userId);
+  if (!item) return { error: "Item not found." };
+  if (item.purchasedAt) return { error: "You've already bought this item." };
+  if (item.payType !== "watch") return { error: "Move this item to price watch first." };
+  const db = await getDb();
+  const [offer] = item.chosenOfferId ? await db.select().from(schema.offers).where(eq(schema.offers.id, item.chosenOfferId)) : [];
+  const today = num(item.lastPrice) ?? num(offer?.price) ?? num(item.estimatedPrice);
+  const t = Math.round(target * 100) / 100;
+  if (!Number.isFinite(t) || t < 1) return { error: "Enter a target of at least $1." };
+  if (today != null && t >= today) return { error: `Pick a price below today's $${today.toFixed(2)}.` };
+  await db.update(schema.planItems).set({ targetPrice: String(t) }).where(eq(schema.planItems.id, itemId));
+  return { targetPrice: t };
+}

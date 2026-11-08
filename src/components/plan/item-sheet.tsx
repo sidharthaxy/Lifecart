@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { money } from "@/lib/format";
 import type { ItemView, OfferView } from "@/lib/totals";
 import { IndependentBadge, PayPill, priceVerdict } from "./bits";
+import { TargetEditor } from "@/components/watch/target-editor";
 
 function PriceChart({ points }: { points: { at: string; price: number }[] }) {
   if (points.length < 2) return <p className="text-sm text-muted-foreground">No price history for this listing yet.</p>;
@@ -67,11 +68,13 @@ export function ItemSheet({
   onClose,
   onUse,
   onWatch,
+  onTarget,
 }: {
   item: ItemView | null;
   onClose: () => void;
   onUse: (offerId: string) => void;
   onWatch: (watch: boolean) => void;
+  onTarget: (target: number) => void;
 }) {
   const v = priceVerdict(item?.offer ?? null);
   const s = item?.offer?.stats;
@@ -86,8 +89,16 @@ export function ItemSheet({
               <SheetDescription className="sr-only">Offers and price history for {item.name}</SheetDescription>
               <div className="flex flex-wrap gap-2 pt-1">
                 <PayPill type={item.payType} />
-                {item.payType === "watch" && item.targetPrice && (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs">Target {money(item.targetPrice)}</span>
+                {item.payType === "watch" && !item.purchased && (
+                  <TargetEditor
+                    itemId={item.id}
+                    name={item.name}
+                    target={item.targetPrice}
+                    today={item.lastPrice ?? item.offer?.price ?? item.estimatedPrice}
+                    low90={item.offer?.stats?.min ?? null}
+                    onSaved={onTarget}
+                    className="tabular inline-flex items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 text-xs font-semibold text-warning hover:ring-1 hover:ring-warning"
+                  />
                 )}
               </div>
             </SheetHeader>
@@ -137,7 +148,7 @@ export function ItemSheet({
                   {item.payType === "watch" ? (
                     <>
                       <span className="text-sm">
-                        <strong>Watching for {money(item.targetPrice)}</strong> or less. You&apos;ll get a WhatsApp message to approve when it hits.
+                        <strong>Watching for {money(item.targetPrice)}</strong> or less. You&apos;ll get a WhatsApp message to approve when it hits. Tap the target above to change it.
                       </span>
                       <button type="button" onClick={() => onWatch(false)} className="min-h-10 self-start rounded-lg border border-border px-3 text-sm font-semibold hover:border-primary">
                         Buy now instead

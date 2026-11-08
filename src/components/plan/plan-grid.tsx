@@ -7,6 +7,7 @@ import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type RowC
 import { money } from "@/lib/format";
 import type { ItemView } from "@/lib/totals";
 import { IndependentBadge, PayPill, Sparkline, priceVerdict } from "./bits";
+import { TargetEditor } from "@/components/watch/target-editor";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -88,7 +89,7 @@ function PayCell({ data }: CustomCellRendererProps<Row>) {
   );
 }
 
-function PriceCell({ data }: CustomCellRendererProps<Row>) {
+function PriceCell({ data, context }: CustomCellRendererProps<Row, unknown, GridContext>) {
   if (!data || isGroup(data)) return null;
   const p = data.offer?.price ?? data.estimatedPrice;
   return (
@@ -98,12 +99,21 @@ function PriceCell({ data }: CustomCellRendererProps<Row>) {
         {data.cadence === "monthly" && <span className="font-normal text-muted-foreground">/mo</span>}
       </span>
       {data.offer?.wasPrice ? <span className="tabular text-xs text-muted-foreground line-through">{money(data.offer.wasPrice)}</span> : null}
-      {data.payType === "watch" && data.targetPrice ? <span className="tabular text-xs text-warning">Target {money(data.targetPrice)}</span> : null}
+      {data.payType === "watch" && !data.purchased ? (
+        <TargetEditor
+          itemId={data.id}
+          name={data.name}
+          target={data.targetPrice}
+          today={data.lastPrice ?? p ?? null}
+          low90={data.offer?.stats?.min ?? null}
+          onSaved={(t) => context?.onTarget(data.id, t)}
+        />
+      ) : null}
     </div>
   );
 }
 
-type GridContext = { onWatch: (id: string, on: boolean) => void; onDelete: (id: string) => void; busy: string | null };
+type GridContext = { onWatch: (id: string, on: boolean) => void; onDelete: (id: string) => void; onTarget: (id: string, target: number) => void; busy: string | null };
 
 function ActionCell({ data, context }: CustomCellRendererProps<Row, unknown, GridContext>) {
   if (!data || isGroup(data)) return null;
@@ -169,6 +179,7 @@ export function PlanGrid({
   onSelect,
   onWatch,
   onDelete,
+  onTarget,
   busy = null,
   quickFilter,
 }: {
@@ -176,10 +187,11 @@ export function PlanGrid({
   onSelect: (id: string) => void;
   onWatch: (id: string, on: boolean) => void;
   onDelete: (id: string) => void;
+  onTarget: (id: string, target: number) => void;
   busy?: string | null;
   quickFilter?: string;
 }) {
-  const context = useMemo<GridContext>(() => ({ onWatch, onDelete, busy }), [onWatch, onDelete, busy]);
+  const context = useMemo<GridContext>(() => ({ onWatch, onDelete, onTarget, busy }), [onWatch, onDelete, onTarget, busy]);
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
     let last = "";

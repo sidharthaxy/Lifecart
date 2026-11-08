@@ -91,6 +91,8 @@ export function PlanWorkspace({
     }
   };
 
+  const setTarget = (id: string, target: number) => setItems((prev) => prev.map((it) => (it.id === id ? { ...it, targetPrice: target } : it)));
+
   // Remove an item: ask first, and offer price watch as the gentler option for products.
   const [toDelete, setToDelete] = useState<string | null>(null);
   const deleting = items.find((i) => i.id === toDelete) ?? null;
@@ -137,6 +139,7 @@ export function PlanWorkspace({
               onSelect={setSelected}
               onWatch={watch}
               onDelete={setToDelete}
+              onTarget={setTarget}
               busy={busy}
               quickFilter={filter}
             />
@@ -393,6 +396,7 @@ export function PlanWorkspace({
         onClose={() => setSelected(null)}
         onUse={useOffer}
         onWatch={(on) => item && watch(item.id, on)}
+        onTarget={(t) => item && setTarget(item.id, t)}
       />
     </div>
   );

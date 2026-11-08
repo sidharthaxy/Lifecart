@@ -10,6 +10,7 @@ import { money, num } from "@/lib/format";
 import { listWatched } from "@/lib/watch";
 import { listManaged } from "@/lib/manage";
 import { CancelRefillsButton } from "@/components/watch/cancel-refills";
+import { TargetEditor } from "@/components/watch/target-editor";
 
 const ago = (d: Date | null) => {
   if (!d) return "not checked yet";
@@ -80,7 +81,17 @@ async function Watchlist() {
                 <div className="flex items-end justify-between gap-3">
                   <span className="flex flex-col">
                     <span className="tabular font-heading text-[26px] font-extrabold">{money(now)}</span>
-                    <span className="text-[13px] text-muted-foreground">Target {money(target)} · checked {ago(item.lastCheckedAt)}</span>
+                    <span className="flex flex-wrap items-center gap-x-1.5 text-[13px] text-muted-foreground">
+                      <TargetEditor
+                        itemId={item.id}
+                        name={item.name}
+                        target={target}
+                        today={now || null}
+                        low90={offer?.stats?.min ?? null}
+                        className="tabular inline-flex items-center gap-1 rounded text-[13px] font-semibold text-warning underline decoration-dotted underline-offset-2"
+                      />
+                      · checked {ago(item.lastCheckedAt)}
+                    </span>
                   </span>
                 </div>
                 {alert ? (

@@ -53,6 +53,11 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 
 ### Price watch
 - Move any product to **price watch** with a target price. LifeCart checks the live price at that store.
+- **How targets are set:**
+  - **By the agent:** "can wait" items start about 15–25% below the typical price, re-anchored to 15% below the real store price once it's known.
+  - **When you press Watch:** the 90-day low if it's meaningfully below today's price, otherwise 15% off.
+  - **When a check finds a wrong target** (price already at or under it without a real drop): reset to 15% below today's price instead of sending a false alert.
+- **Change it anytime:** click the target in the plan table, the item drawer or Orders & watch. The editor shows today's price and the 90-day low, with quick picks (90-day low, 10% off, 20% off). A target must be below today's price and at least $1.
 - An alert needs a **real drop** (lower than last seen *and* at or below your target). All drops in a run go out as **one** WhatsApp message, with a link back to the app to buy with PayPal. LifeCart never buys on its own.
 
 ### Bills

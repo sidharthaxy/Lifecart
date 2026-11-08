@@ -11,7 +11,7 @@ import { cleanText } from "@/lib/guard/sanitize";
 import { createGoalSafely } from "@/lib/goals";
 import { allow } from "@/lib/guard/ratelimit";
 import { appOrigin } from "@/lib/origin";
-import { chooseOffer, deletePlan, deletePlanItem, setItemRail } from "@/lib/plans";
+import { chooseOffer, deletePlan, deletePlanItem, setItemRail, setWatchTarget } from "@/lib/plans";
 import { checkWatches } from "@/lib/watch";
 import { cancelRefills } from "@/lib/manage";
 
@@ -203,6 +203,18 @@ export async function findCouponsAction(goalId: string): Promise<CouponState> {
 }
 
 export type DeleteState = { ok?: boolean; error?: string };
+
+/** Change a watched item's target price (plan table, item drawer, Orders & watch). */
+export async function updateWatchTarget(itemId: string, target: number): Promise<{ targetPrice?: number; error?: string }> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(itemId) || typeof target !== "number") return { error: "Unknown item" };
+  if (!allow(`target:${user.id}`, 60, 60 * 60_000).ok) return { error: "Too many changes. Try again in a few minutes." };
+  const res = await setWatchTarget(itemId, target, user.id);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/orders");
+  return res;
+}
 
 /** Remove one item from a plan (plan page, and price watch on the Orders page). */
 export async function removePlanItem(itemId: string): Promise<DeleteState> {
