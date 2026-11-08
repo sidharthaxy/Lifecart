@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { Check, CheckCircle2, Lock, ExternalLink } from "lucide-react";
+import { CheckCircle2, Lock, ExternalLink } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { getApprovalByToken } from "@/lib/approvals";
 import { money } from "@/lib/format";
 
@@ -11,10 +12,9 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex items-center gap-2.5 border-b border-border bg-card px-5 py-4">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-primary">
-          <Check className="size-4 text-primary-foreground" strokeWidth={2.4} aria-hidden />
+        <span className="flex-1">
+          <Logo size={30} />
         </span>
-        <span className="font-heading flex-1 text-[17px] font-extrabold">LifeCart</span>
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock className="size-3.5" aria-hidden /> Secure approval
         </span>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Check } from "lucide-react";
+import { Logo } from "@/components/brand/logo";
 import { UserMenu } from "@/components/auth/user-menu";
 import { getSessionUser } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
@@ -24,11 +24,8 @@ export function AppHeader({ active, signedOut }: { active?: (typeof NAV)[number]
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5 text-foreground no-underline">
-          <span className="flex size-8 items-center justify-center rounded-[9px] bg-primary">
-            <Check className="size-[18px] text-primary-foreground" strokeWidth={2.4} aria-hidden />
-          </span>
-          <span className="font-heading text-[19px] font-extrabold tracking-tight">LifeCart</span>
+        <Link href="/" aria-label="LifeCart home" className="text-foreground no-underline">
+          <Logo size={34} />
         </Link>
         {signedOut ? (
           <span className="flex-1" />
