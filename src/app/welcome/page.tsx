@@ -21,6 +21,7 @@ async function Welcome() {
   return (
     <>
       <WhatsAppSetup
+        optional
         verified={maskedPhone(alertNumber(user))}
         joinPhrase={sandboxJoin()}
         joinUrl={joinLink()}

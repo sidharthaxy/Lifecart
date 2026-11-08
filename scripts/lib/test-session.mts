@@ -28,7 +28,7 @@ export async function signInPage(page: Page, email: string, logFile: string, bas
   await page.waitForSelector("#budget, input[name=name]", { timeout: 30_000 });
   if (await page.$("input[name=name]")) {
     await page.type("input[name=name]", "Test User");
-    await page.click("button[type=submit]");
+    await page.click("button[type=submit]:not([name=intent])");
     await page.waitForSelector("#budget", { timeout: 30_000 });
   }
 }

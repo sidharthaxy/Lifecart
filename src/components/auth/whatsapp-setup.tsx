@@ -8,7 +8,20 @@ import { phoneStep, type PhoneState } from "@/app/auth-actions";
  * WhatsApp alerts: 1) join LifeCart's WhatsApp (Twilio sandbox opt-in), 2) verify your number with a code sent there.
  * Alerts only ever go to your own verified number.
  */
-export function WhatsAppSetup({ verified, joinPhrase, joinUrl, sandboxNumber }: { verified: string | null; joinPhrase: string | null; joinUrl: string | null; sandboxNumber: string }) {
+export function WhatsAppSetup({
+  verified,
+  joinPhrase,
+  joinUrl,
+  sandboxNumber,
+  optional,
+}: {
+  verified: string | null;
+  joinPhrase: string | null;
+  joinUrl: string | null;
+  sandboxNumber: string;
+  /** Welcome screen: say clearly that this can be skipped. */
+  optional?: boolean;
+}) {
   const [state, action, pending] = useActionState<PhoneState, FormData>(phoneStep, verified ? { step: "done", masked: verified } : { step: "number" });
   const step = state?.step ?? "number";
   const field = "min-h-11 rounded-[10px] border border-input bg-[#FBFCFD] px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -39,8 +52,12 @@ export function WhatsAppSetup({ verified, joinPhrase, joinUrl, sandboxNumber }: 
       <div className="flex flex-col gap-1">
         <h2 id="wa" className="text-lg font-semibold">
           WhatsApp alerts
+          {optional && <span className="ml-2 rounded-full bg-muted px-2 py-0.5 align-middle text-xs font-semibold text-muted-foreground">Optional</span>}
         </h2>
-        <p className="text-sm text-muted-foreground">Price drops, bills due and receipts, sent only to your own number, with a link back here to pay with PayPal.</p>
+        <p className="text-sm text-muted-foreground">
+          Price drops, bills due and receipts, sent only to your own number, with a link back here to pay with PayPal.
+          {optional && " You can skip this and add it any time in your profile; everything else works without it."}
+        </p>
       </div>
 
       {step === "done" ? (

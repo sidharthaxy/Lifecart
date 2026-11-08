@@ -26,7 +26,7 @@ if (budgetArg > 0) {
   await page.goto(base + "/profile", { waitUntil: "networkidle0" });
   await page.$eval("input[name=monthlyBudget]", (e) => ((e as HTMLInputElement).value = ""));
   await page.type("input[name=monthlyBudget]", process.argv[budgetArg + 1]);
-  await page.click("button[type=submit]");
+  await page.click("button[type=submit]:not([name=intent])");
   await page.waitForSelector("[role=status]", { timeout: 30_000 });
 }
 const res = await page.goto(base + path, { waitUntil: "networkidle0" });

@@ -38,7 +38,7 @@ async function signIn(page: Page, email: string, name?: string) {
     await page.screenshot({ path: `${out}/auth-welcome.png`, fullPage: true });
     await page.type("input[name=name]", name);
     await page.type("input[name=monthlyBudget]", "750");
-    await page.click("button[type=submit]");
+    await page.click("button[type=submit]:not([name=intent])");
     await page.waitForSelector("#budget", { timeout: 30_000 });
   }
   ok(new URL(page.url()).pathname === "/", `${email}: lands on home`);
