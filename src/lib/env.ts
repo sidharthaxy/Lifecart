@@ -10,7 +10,8 @@ const read = (name: string): string | undefined => {
 };
 
 export const env = {
-  appUrl: read("APP_URL") ?? "http://localhost:3000",
+  /** Public URL. On Render, RENDER_EXTERNAL_URL (e.g. https://lifecart.onrender.com) is set automatically. */
+  appUrl: read("APP_URL") ?? read("RENDER_EXTERNAL_URL") ?? "http://localhost:3000",
   approvalSecret: read("APPROVAL_SECRET"),
 
   aiProvider: (read("AI_PROVIDER") ?? "groq") as "groq",

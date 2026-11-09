@@ -9,10 +9,9 @@
  * Each checkUser run uses the same code as the in-app path (src/lib/cron.ts), so behaviour is identical, and the
  * per-item cooldowns + daily usage caps in the database protect against double sends even if a run is retried.
  *
- * Deploy: Render Dashboard -> New -> Workflow -> this repo, Language Node,
- *   Build: npm install    Start: npx tsx workflows/main.ts
- *   Env: DATABASE_URL, CHANNEL3_API_KEY, TWILIO_*, APPROVAL_SECRET (same values as the web service).
- * Local: render workflows dev --env-file .env.local -- "npx tsx workflows/main.ts"
+ * Deploy: the `lifecart-workflows` service in render.yaml (build `npm ci`, start `npm run workflows`; its keys are
+ *   copied from the web service).
+ * Local: npm run workflows:dev  (render workflows dev --env-file .env.local -- npx tsx workflows/main.ts)
  *   (the task server starts automatically when Render sets RENDER_SDK_SOCKET_PATH)
  */
 import { task, type TaskContext } from "@renderinc/sdk/workflows";

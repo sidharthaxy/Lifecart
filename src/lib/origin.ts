@@ -6,7 +6,7 @@ import { env } from "./env";
  */
 export function appOrigin(h: Headers): string {
   // Read live so editing APP_URL in .env.local (e.g. a new tunnel URL) applies without a restart.
-  const configured = process.env.APP_URL?.trim() || env.appUrl;
+  const configured = process.env.APP_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim() || env.appUrl;
   if (configured && !/localhost|127\.0\.0\.1/.test(configured)) return configured.replace(/\/$/, "");
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");

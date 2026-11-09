@@ -1,0 +1,147 @@
+# LifeCart on Render: one Blueprint creates everything.
+#   Dashboard -> New -> Blueprint -> pick this repo. Render asks for each `sync: false` value once (paste them from
+#   your own .env.local; they are never stored in this file).
+#
+#   lifecart-db         Postgres
+#   lifecart            Next.js web app (pages + API routes + server actions). Schema is applied before each deploy.
+#   lifecart-workflows  Render Workflows task server (workflows/main.ts): dailyAlerts -> checkUser per user
+#   lifecart-daily      Cron job, once a day: POST /api/cron/daily, which starts the workflow run
+#
+# After the first deploy: create a Render API key (Account Settings -> API Keys) and paste it into RENDER_API_KEY on
+# the `lifecart` service. Until then the daily job simply runs inside the web app.
+
+databases:
+  - name: lifecart-db
+    databaseName: lifecart
+    user: lifecart
+    region: oregon
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+
+services:
+  - type: web
+    name: lifecart
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run db:push
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lifecart-db
+          property: connectionString
+      - key: APPROVAL_SECRET
+        generateValue: true
+      # Leave APP_URL unset: the app uses RENDER_EXTERNAL_URL. Set it only if you add a custom domain.
+      - key: AI_PROVIDER
+        value: groq
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PAYPAL_ENVIRONMENT
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: NEXT_PUBLIC_PAYPAL_CLIENT_ID
+        sync: false
+      - key: CHANNEL3_API_KEY
+        sync: false
+      - key: KERNEL_API_KEY
+        sync: false
+      - key: WHATSAPP_PROVIDER
+        value: twilio
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM
+        sync: false
+      - key: TWILIO_SANDBOX_JOIN
+        sync: false
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: RENDER_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: lifecart-workflows
+          property: slug
+      - key: RENDER_API_KEY
+        sync: false
+
+  - type: workflow
+    name: lifecart-workflows
+    runtime: node
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm run workflows
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lifecart-db
+          property: connectionString
+      # Same values as the web service (entered once there).
+      - key: APPROVAL_SECRET
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: APPROVAL_SECRET
+      - key: GROQ_API_KEY
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: GROQ_API_KEY
+      - key: CHANNEL3_API_KEY
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: CHANNEL3_API_KEY
+      - key: TWILIO_ACCOUNT_SID
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: TWILIO_ACCOUNT_SID
+      - key: TWILIO_AUTH_TOKEN
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: TWILIO_AUTH_TOKEN
+      - key: TWILIO_FROM
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: TWILIO_FROM
+      - key: TWILIO_SANDBOX_JOIN
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: TWILIO_SANDBOX_JOIN
+      - key: WHATSAPP_PROVIDER
+        value: twilio
+
+  - type: cron
+    name: lifecart-daily
+    runtime: node
+    region: oregon
+    plan: starter
+    schedule: "0 15 * * *" # 15:00 UTC = 10:00 US Eastern / 07:00 Pacific
+    buildCommand: echo "nothing to build"
+    startCommand: >-
+      curl -fsS -X POST "http://$APP_HOST/api/cron/daily" -H "Authorization: Bearer $APPROVAL_SECRET"
+    envVars:
+      - key: APP_HOST
+        fromService:
+          type: web
+          name: lifecart
+          property: hostport
+      - key: APPROVAL_SECRET
+        fromService:
+          type: web
+          name: lifecart
+          envVarKey: APPROVAL_SECRET
