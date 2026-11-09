@@ -15,12 +15,20 @@ import { AppHeader } from "@/components/app-header";
 import {
   AddBillForm,
   DeleteBillButton,
+  EditBillButton,
   PayBillsButton,
   PlanPicker,
   RemindButton,
   SampleBillsButton,
   SwitchPlanButton,
 } from "@/components/bills/bill-controls";
+
+/** For bills from before billing periods existed: assume the period started a month before the due date. */
+const prevMonth = (iso: string) => {
+  const d = new Date(iso);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString();
+};
 import { insights, listBills, type BillView } from "@/lib/bills";
 import { money } from "@/lib/format";
 import { alertNumber, maskedPhone } from "@/lib/whatsapp";
@@ -235,7 +243,8 @@ async function BillsHub() {
                   <span className="flex min-w-[170px] flex-col text-sm">
                     <span className={due.tone}>{due.text}</span>
                     <span className="text-xs text-muted-foreground">
-                      {MODE[b.autopayMode] ?? ""}
+                      Every {b.periodLabel}
+                      {MODE[b.autopayMode] ? ` · ${MODE[b.autopayMode]}` : ""}
                     </span>
                   </span>
                   <span className="ml-auto flex items-center gap-1">
@@ -246,6 +255,17 @@ async function BillsHub() {
                     ) : (
                       <PayBillsButton ids={[b.id]} label="Pay" />
                     )}
+                    <EditBillButton
+                      id={b.id}
+                      values={{
+                        name: b.name,
+                        payee: b.payee,
+                        type: b.type,
+                        amount: b.amount.toFixed(2),
+                        periodStart: (b.periodStart ?? prevMonth(b.dueDate)).slice(0, 10),
+                        dueDate: b.dueDate.slice(0, 10),
+                      }}
+                    />
                     <DeleteBillButton id={b.id} name={b.name} />
                   </span>
                 </li>

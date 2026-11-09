@@ -42,7 +42,7 @@ for (const [i, it] of items.entries()) {
   await db.update(schema.planItems).set({ chosenOfferId: offer.id }).where(eq(schema.planItems.id, row.id));
   if (!firstItemId) firstItemId = row.id;
 }
-await addBill(A.id, { name: "Electricity", payee: "City Power (test)", type: "electricity", amount: 88.2, dueDate: new Date(Date.now() + 2 * 86_400_000) });
+await addBill(A.id, { name: "Electricity", payee: "City Power (test)", type: "electricity", amount: 88.2, periodStart: new Date(Date.now() - 28 * 86_400_000), dueDate: new Date(Date.now() + 2 * 86_400_000) });
 const [aBill] = (await listBills(A.id)).slice(-1);
 console.log(`created plan ${goal.id} and bill ${aBill.id} for A\n`);
 

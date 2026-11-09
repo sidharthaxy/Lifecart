@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { createBillApproval, isPaidNow } from "./approvals";
 import { money, num } from "./format";
+import { periodLabel } from "./bill-period";
 import type { SendResult } from "./whatsapp";
 
 /**
@@ -19,6 +20,10 @@ export type BillView = {
   amount: number;
   average: number | null;
   dueDate: string;
+  /** Start of the current billing period (null = monthly, from before periods existed). */
+  periodStart: string | null;
+  /** e.g. "1 month", "2 weeks". */
+  periodLabel: string;
   daysLeft: number;
   paid: boolean;
   paidAt: string | null;
@@ -63,6 +68,8 @@ export async function listBills(userId: string): Promise<BillView[]> {
     amount: num(b.amount) ?? 0,
     average: num(b.averageAmount),
     dueDate: b.dueDate.toISOString(),
+    periodStart: b.periodStart?.toISOString() ?? null,
+    periodLabel: periodLabel(b.periodStart, b.dueDate),
     daysLeft: Math.ceil((b.dueDate.getTime() - Date.now()) / DAY),
     paid: isPaidNow(b),
     paidAt: b.paidAt?.toISOString() ?? null,
@@ -112,18 +119,47 @@ export async function changePhonePlan(billId: string, price: number, userId: str
   return { ok: true };
 }
 
-export async function addBill(userId: string, input: { name: string; payee: string; type: string; amount: number; dueDate: Date }) {
+export type BillInput = { name: string; payee: string; type: string; amount: number; periodStart: Date; dueDate: Date };
+const BILL_TYPES = ["rent", "electricity", "water", "internet", "phone", "subscription", "other"];
+const billType = (t: string) => (BILL_TYPES.includes(t) ? t : "other") as Bill["type"];
+
+export async function addBill(userId: string, input: BillInput) {
   const db = await getDb();
-  const type = ["rent", "electricity", "water", "internet", "phone", "subscription", "other"].includes(input.type) ? input.type : "other";
   await db.insert(schema.bills).values({
     userId,
-    type: type as Bill["type"],
+    type: billType(input.type),
     name: input.name,
     payee: input.payee,
     amount: String(input.amount),
     averageAmount: String(input.amount),
+    periodStart: input.periodStart,
     dueDate: input.dueDate,
   });
+}
+
+/**
+ * Edit a bill: name, payee, type, amount and the current period. Changing the dates re-opens the bill if the
+ * new period has already started (it becomes due again), and clears the reminder cooldown so a near due date
+ * still gets its reminder.
+ */
+export async function updateBill(userId: string, billId: string, input: BillInput): Promise<{ ok: true } | { error: string }> {
+  const db = await getDb();
+  const [b] = await db.select().from(schema.bills).where(and(eq(schema.bills.id, billId), eq(schema.bills.userId, userId)));
+  if (!b) return { error: "Bill not found." };
+  const datesChanged = b.dueDate.getTime() !== input.dueDate.getTime() || (b.periodStart?.getTime() ?? 0) !== input.periodStart.getTime();
+  await db
+    .update(schema.bills)
+    .set({
+      name: input.name,
+      payee: input.payee,
+      type: billType(input.type),
+      amount: String(input.amount),
+      periodStart: input.periodStart,
+      dueDate: input.dueDate,
+      ...(datesChanged ? { lastRemindedAt: null } : {}),
+    })
+    .where(eq(schema.bills.id, billId));
+  return { ok: true };
 }
 
 /**

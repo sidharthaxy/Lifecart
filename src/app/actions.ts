@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createBillApproval, createCartApproval, startPayment } from "@/lib/approvals";
 import { actionUser } from "@/lib/auth/session";
-import { addBill, addSampleBills, changePhonePlan, deleteBill, remindDueBills } from "@/lib/bills";
+import { addBill, addSampleBills, changePhonePlan, deleteBill, remindDueBills, updateBill, type BillInput } from "@/lib/bills";
+import { periodError } from "@/lib/bill-period";
 import { findCoupons, type StoreCoupons } from "@/lib/coupons";
 import { cleanText } from "@/lib/guard/sanitize";
 import { createGoalSafely } from "@/lib/goals";
@@ -119,19 +120,47 @@ export async function switchPhonePlan(billId: string, price: number) {
 }
 
 export type AddBillState = { error?: string; ok?: boolean } | undefined;
+
+/** A date input ("2026-11-09") as midday UTC, so the calendar day stays the same in every time zone. */
+const dayFromInput = (v: FormDataEntryValue | null) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T12:00:00Z`) : new Date(NaN));
+
+/** Shared by add and edit: the same checks either way. */
+function parseBill(form: FormData): BillInput | { error: string } {
+  const name = cleanText(form.get("name"), 60);
+  const payee = cleanText(form.get("payee"), 80);
+  const amount = Number(String(form.get("amount") ?? "").replace(/[^0-9.]/g, ""));
+  const periodStart = dayFromInput(form.get("periodStart"));
+  const dueDate = dayFromInput(form.get("dueDate"));
+  if (name.length < 2 || payee.length < 2) return { error: "Add a name and who you pay." };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 50_000) return { error: "Enter an amount between $0 and $50,000." };
+  const bad = periodError(periodStart, dueDate);
+  if (bad) return { error: bad };
+  return { name, payee, type: String(form.get("type") ?? "other"), amount: Math.round(amount * 100) / 100, periodStart, dueDate };
+}
+
 export async function addBillAction(_prev: AddBillState, form: FormData): Promise<AddBillState> {
   const user = await actionUser();
   if (!user) return { error: SIGNED_OUT };
   if (!allow(`bill-add:${user.id}`, 30, 60 * 60_000).ok) return { error: "Too many bills added. Try again later." };
-  const name = cleanText(form.get("name"), 60);
-  const payee = cleanText(form.get("payee"), 80);
-  const amount = Number(String(form.get("amount") ?? "").replace(/[^0-9.]/g, ""));
-  const due = new Date(String(form.get("dueDate") ?? ""));
-  if (name.length < 2 || payee.length < 2) return { error: "Add a name and who you pay." };
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 50_000) return { error: "Enter an amount between $0 and $50,000." };
-  if (Number.isNaN(due.getTime())) return { error: "Pick a due date." };
-  await addBill(user.id, { name, payee, type: String(form.get("type") ?? "other"), amount: Math.round(amount * 100) / 100, dueDate: due });
+  const input = parseBill(form);
+  if ("error" in input) return { error: input.error };
+  await addBill(user.id, input);
   revalidatePath("/bills");
+  return { ok: true };
+}
+
+/** Edit a bill: amount, dates (billing period), name, payee, type. */
+export async function updateBillAction(billId: string, _prev: AddBillState, form: FormData): Promise<AddBillState> {
+  const user = await actionUser();
+  if (!user) return { error: SIGNED_OUT };
+  if (!isId(billId)) return { error: "Unknown bill" };
+  if (!allow(`bill-edit:${user.id}`, 60, 60 * 60_000).ok) return { error: "Too many changes. Try again later." };
+  const input = parseBill(form);
+  if ("error" in input) return { error: input.error };
+  const res = await updateBill(user.id, billId, input);
+  if ("error" in res) return { error: res.error };
+  revalidatePath("/bills");
+  revalidatePath("/");
   return { ok: true };
 }
 

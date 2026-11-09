@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState } from "react";
 import { ArrowRight, Camera, Loader2, X } from "lucide-react";
 import { createGoal, type GoalFormState } from "@/app/actions";
+import { MicButton } from "@/components/mic-button";
 
 const EXAMPLES = [
   "Moving into my first studio apartment next month, budget is tight.",
@@ -25,6 +26,7 @@ async function toSmallDataUrl(file: File): Promise<string> {
 export function GoalForm({ defaultBudget }: { defaultBudget?: number | null }) {
   const [state, action, pending] = useActionState<GoalFormState, FormData>(createGoal, undefined);
   const [prompt, setPrompt] = useState("");
+  const [heard, setHeard] = useState(""); // words the mic is hearing right now (not final yet)
   const [photo, setPhoto] = useState<string>("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -37,15 +39,22 @@ export function GoalForm({ defaultBudget }: { defaultBudget?: number | null }) {
       <label htmlFor="goal" className="text-sm font-semibold">
         What&apos;s happening in your life?
       </label>
-      <textarea
-        id="goal"
-        name="prompt"
-        rows={3}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder="For example: I'm starting to work from home and need a proper desk setup."
-        className="w-full resize-y rounded-xl border border-input bg-[#FBFCFD] px-4 py-3.5 text-[17px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      />
+      <div className="relative">
+        <textarea
+          id="goal"
+          name="prompt"
+          rows={3}
+          value={heard ? `${prompt}${prompt && !prompt.endsWith(" ") ? " " : ""}${heard}` : prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="For example: I'm starting to work from home and need a proper desk setup."
+          className="w-full resize-y rounded-xl border border-input bg-[#FBFCFD] px-4 py-3.5 pr-16 text-[17px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        />
+        <MicButton
+          className="absolute bottom-3 right-6"
+          onInterim={setHeard}
+          onText={(t) => t && setPrompt((p) => (p && !p.endsWith(" ") ? `${p} ${t}` : `${p}${t}`))}
+        />
+      </div>
       <input type="hidden" name="photo" value={photo} />
 
       <div className="flex flex-wrap items-center gap-3">

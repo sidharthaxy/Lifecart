@@ -42,6 +42,7 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 
 ### AI planning
 - **Describe a life change or upload a photo:** "I'm out 9 to 7 and getting a golden retriever puppy", "moving into my first studio".
+- **Or say it.** A mic button in the text box uses the browser's own speech-to-text (Web Speech API). It's hidden in browsers that don't support it; LifeCart only receives the text.
 - **Asks before it plans.** Zero to three tap-to-answer follow-up questions, and none at all for specific requests.
 - **A complete, budgeted plan.** Every item comes with a reason, is matched to a real store listing (Channel3) and checked against **90-day price history**. Independent stores are flagged when their prices are close.
 - **Plan workspace.** An AG Grid table grouped by category, with a budget slider, an item drawer with alternatives and price history, and a **Watch / Buy now** button on every row.
@@ -70,6 +71,8 @@ Built for the PayPal AI Hackathon 2026. Everything runs against PayPal's **sandb
 
 ### Bills
 - Rent, utilities, internet, phone top-ups and subscriptions in one place, with a due-date timeline.
+- **Your billing period, your way.** Pick the start and end of the current period (the end is the due date). LifeCart works out the length (1 month, 2 weeks, 3 months, a year...) and shows it as you pick. When you pay, the next period starts where this one ended, with the same length; whole months stay on the same day of the month.
+- **Edit any bill** (pencil icon): change the amount, the period, the payee or the type.
 - Pay one bill or "everything due this week" in a single PayPal payment.
 - Insights: bills more than 15% above their average, and a cheaper phone plan that fits your usage (with yearly savings).
 - **One** WhatsApp reminder for bills due within 3 days, at most once a day per bill.
@@ -433,6 +436,8 @@ All in `scripts/`, run with `npx tsx --env-file=.env.local scripts/<name>`. Ther
 | `workflow-test.mts` | Triggers `dailyAlerts` like the cron route does (needs `npm run workflows:dev`); checks it finishes, fans out per user, and isn't started twice in an hour |
 | `navigate-away-test.mts <devLog>` | Other pages load while the agent plans; the plan finishes after you leave; coupon results are saved after you leave |
 | `whatsapp-verify-test.mts <devLog> <outDir>` | WhatsApp setup: unjoined number refused, wrong code, real code verified, number removed |
+| `bill-period-test.mts` | Billing periods: lengths (month, weeks, quarter, year), rolling forward after payment, bad dates refused (14 of 14) |
+| `bills-edit-test.mts <devLog> <outDir>` | Add a bill with a 2-week period, bad dates flagged, edit amount and period, mic button shown or hidden by browser support (9 of 9) |
 | `budget-test.mts` | Budget month dates (including year boundaries) and the spent / left maths |
 | `target-test.mts <devLog> <outDir> <planPath>` | Editing a watch target: too high refused, quick pick saved, edit on Orders & watch |
 | `copy-pglite-to-postgres.mts` | One-off: copy everything from the embedded database into Postgres |

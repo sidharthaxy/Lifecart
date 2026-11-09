@@ -188,7 +188,10 @@ export const bills = pgTable("bills", {
   payeeAccount: text("payee_account"),
   amount: money("amount").notNull(),
   averageAmount: money("average_amount"),
+  /** End of the current billing period; the bill is due on this day. */
   dueDate: timestamp("due_date", { withTimezone: true }).notNull(),
+  /** Start of the current billing period. Period length = dueDate - periodStart (null = monthly). */
+  periodStart: timestamp("period_start", { withTimezone: true }),
   autopayMode: text("autopay_mode").notNull().default("ask"), // ask | autopay_notify | remind
   /** Short account label shown to the user, e.g. "Prepaid plan · (415) ···0142". */
   accountLabel: text("account_label"),

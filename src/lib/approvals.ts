@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { ApprovalLine, ApprovalPayload, ApprovalResult } from "@/db/schema";
 import { getUserById } from "./users";
+import { nextPeriod } from "./bill-period";
 import { money } from "./format";
 import {
   captureOrder,
@@ -494,9 +495,9 @@ async function markBillsPaid(ids: string[]) {
   const db = await getDb();
   const rows = await db.select().from(schema.bills).where(inArray(schema.bills.id, ids));
   for (const b of rows) {
-    const next = new Date(b.dueDate);
-    next.setMonth(next.getMonth() + 1);
-    await db.update(schema.bills).set({ paidAt: new Date(), dueDate: next, lastRemindedAt: null }).where(eq(schema.bills.id, b.id));
+    // Roll to the next period of the same length (whole months stay on the same day of the month).
+    const next = nextPeriod(b.periodStart, b.dueDate);
+    await db.update(schema.bills).set({ paidAt: new Date(), periodStart: next.start, dueDate: next.end, lastRemindedAt: null }).where(eq(schema.bills.id, b.id));
   }
 }
 
@@ -559,8 +560,13 @@ export async function createBillApproval(
   return { token, link, whatsapp };
 }
 
-/** A bill counts as paid if it was paid within the last 25 days (its due date has already rolled forward). */
-export const isPaidNow = (b: { paidAt: Date | null }) => Boolean(b.paidAt && Date.now() - b.paidAt.getTime() < 25 * 86_400_000);
+/**
+ * A bill counts as paid until its next period begins. Paying rolls the period forward (periodStart = the old due
+ * date), so it shows "Paid" until then and becomes due again once the new period starts.
+ * Bills without a period start (older ones) use the old rule: paid within the last 25 days.
+ */
+export const isPaidNow = (b: { paidAt: Date | null; periodStart?: Date | null }) =>
+  Boolean(b.paidAt && (b.periodStart ? Date.now() < b.periodStart.getTime() : Date.now() - b.paidAt.getTime() < 25 * 86_400_000));
 
 function describe(e: unknown) {
   if (e instanceof PayPalError) return `${e.message}${e.status ? ` (${e.status})` : ""}`;
