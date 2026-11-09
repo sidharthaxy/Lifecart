@@ -8,6 +8,7 @@
 # What the free setup uses instead of paid Render services:
 #   Database      Neon free Postgres (neon.tech, no card, doesn't expire). Paste its pooled connection string into
 #                 DATABASE_URL. Render's free Postgres expires after 30 days, so it isn't used here.
+#   Email         Brevo's HTTPS API for sign-in codes (free, no card). Free instances can't use SMTP (Gmail).
 #   Daily alerts  .github/workflows/daily-alerts.yml (GitHub Actions, free) calls POST /api/cron/daily once a day.
 #                 Without RENDER_API_KEY the app runs the daily job itself; Render Workflows needs render.paid.yaml.
 
@@ -53,7 +54,9 @@ services:
         sync: false
       - key: TWILIO_SANDBOX_JOIN
         sync: false
-      - key: GMAIL_USER
+      # Sign-in emails: Render's free tier blocks SMTP ports, so mail goes out through Brevo's HTTPS API.
+      # BREVO_API_KEY from brevo.com -> SMTP & API -> API keys; MAIL_FROM is a sender verified in Brevo -> Senders.
+      - key: BREVO_API_KEY
         sync: false
-      - key: GMAIL_APP_PASSWORD
+      - key: MAIL_FROM
         sync: false

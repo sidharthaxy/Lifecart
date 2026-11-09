@@ -42,6 +42,10 @@ export const env = {
 
   gmailUser: read("GMAIL_USER"),
   gmailAppPassword: read("GMAIL_APP_PASSWORD")?.replace(/\s+/g, ""),
+  /** Brevo's HTTPS email API. Needed on Render's free tier, which blocks outbound SMTP ports. */
+  brevoApiKey: read("BREVO_API_KEY"),
+  /** Sender address for Brevo (verified in Brevo -> Senders). Defaults to GMAIL_USER. */
+  mailFrom: read("MAIL_FROM") ?? read("GMAIL_USER"),
 };
 
 export type IntegrationStatus = {

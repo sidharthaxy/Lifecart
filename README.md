@@ -170,7 +170,7 @@ flowchart LR
   PP["PayPal sandbox<br/>Agent Toolkit + REST"]
   TW["Twilio<br/>WhatsApp"]
   KB["Kernel<br/>cloud browser"]
-  GM["Gmail SMTP<br/>sign-in codes"]
+  GM["Email (Brevo API / Gmail SMTP)<br/>sign-in codes"]
   Cron["Render cron job<br/>POST /api/cron/daily"]
 
   UI --> Proxy --> Actions
@@ -363,7 +363,7 @@ Drizzle ORM on **Postgres** (`DATABASE_URL`), both locally and on Render. If `DA
 | Products | **Channel3**: product search, offers, 90-day price history, live prices |
 | Coupons | **Kernel** cloud browser (Playwright) for web search and coupon pages |
 | Background jobs | **Render Workflows** (`@renderinc/sdk`): the daily alerts job fans out one task per user, with retries |
-| Messaging | **Twilio** WhatsApp sandbox (per-user verified numbers); Gmail SMTP for sign-in codes |
+| Messaging | **Twilio** WhatsApp sandbox (per-user verified numbers); sign-in codes by email through **Brevo**'s HTTPS API (Render's free tier blocks SMTP) or Gmail SMTP locally |
 | Hosting | **Render**: the live demo runs on a free web service with Neon Postgres and a GitHub Actions schedule. The full Blueprint adds Render Postgres, Workflows and a cron job |
 
 ---
@@ -380,7 +380,7 @@ npm run db:push              # in a second terminal, once: creates the tables
 
 `npm run dev:all` expects Homebrew Postgres 18 (`brew install postgresql@18`). Without Postgres, leave `DATABASE_URL` blank and use `npm run dev`: the app creates an embedded database in `./.data`.
 
-- **Sign in without email set up:** if `GMAIL_USER` / `GMAIL_APP_PASSWORD` are empty, the sign-in code is printed in the `npm run dev` terminal (development only).
+- **Sign in without email set up:** if neither `BREVO_API_KEY` nor `GMAIL_USER` / `GMAIL_APP_PASSWORD` is set, the sign-in code is printed in the `npm run dev` terminal (development only).
 - **Integration status and API usage:** open `/setup` while signed in.
 - **Demo tools** (sample bills, "send reminder now", "simulate a price drop"): turn them on in **Profile → Demo tools**.
 - **Open WhatsApp links on your phone:** `npm run tunnel` prints a public HTTPS URL. Put it in `APP_URL`.
@@ -391,7 +391,7 @@ npm run db:push              # in a second terminal, once: creates the tables
 - `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID`
 - `CHANNEL3_API_KEY`
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `TWILIO_SANDBOX_JOIN` (e.g. "join drop-particles")
-- `GMAIL_USER`, `GMAIL_APP_PASSWORD`
+- `BREVO_API_KEY`, `MAIL_FROM` (Brevo email API; required on Render's free tier) or `GMAIL_USER`, `GMAIL_APP_PASSWORD` (Gmail SMTP)
 - `DATABASE_URL` (local or Render Postgres; blank means the embedded PGlite fallback)
 - `RENDER_API_KEY`, `RENDER_WORKFLOW_SLUG` (Render Workflows for the daily job; blank means the app runs it itself), `RENDER_USE_LOCAL_DEV` (local testing only)
 
