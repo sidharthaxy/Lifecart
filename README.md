@@ -108,7 +108,7 @@ Payments already made always stay on the Money page (until the account is delete
 | **Real PayPal sandbox payments**: orders captured, subscriptions approved and cancelled, invoices sent, refunds issued, each verified with PayPal | Payments go to **LifeCart's own sandbox merchant account**; they aren't passed on to the store or the biller |
 | **Real WhatsApp messages** to each user's own verified number (Twilio sandbox) and **real email sign-in codes** | WhatsApp uses Twilio's free sandbox: each user sends a join message first, and it lapses after ~3 days without messages |
 | Live reconciliation of every payment against PayPal | PayPal webhooks (status is checked live on page view instead) |
-| The daily alerts job as **Render Workflows** tasks (one per user, with retries), tested end to end with Render's local task server | Its first cloud run happens once the workflow service is deployed on Render |
+| The daily alerts job as **Render Workflows** tasks (one per user, with retries), tested end to end with Render's local task server, and deployable with [`render.paid.yaml`](render.paid.yaml) | The free live demo runs the same job inside the app, triggered daily by GitHub Actions; Render Workflows needs paid Render instances |
 
 **In production, money would reach the store in one of three ways** (see [Roadmap](#13-roadmap)):
 - **Agent-ready retailers:** stores that accept orders from AI agents (for example through PayPal's agentic commerce services) get the cart and the PayPal payment directly.
@@ -201,7 +201,7 @@ flowchart LR
 | **Coupon finder** | On request only: web search per store in a Kernel browser, offer extraction, 12-hour cache | `src/lib/coupons.ts` |
 | **Bills** | Bills hub, insights, due-date digest | `src/lib/bills.ts` |
 | **Money** | Ledger reconciled live with PayPal, 5-minute per-user cache | `src/lib/money.ts` |
-| **Daily job** | Price watch, then bill reminders, for every user. The Render cron job calls `/api/cron/daily`, which starts a **Render Workflows** run: `dailyAlerts` fans out one `checkUser` task per user (batches of 10, each on its own compute, retried twice on failure). At most one start per hour. Without Workflows configured, the app runs the same code itself | `workflows/main.ts`, `src/lib/workflows.ts`, `src/lib/cron.ts`, `src/app/api/cron/daily` |
+| **Daily job** | Price watch, then bill reminders, for every user. A daily schedule (a Render cron job, or GitHub Actions in the free deploy) calls `/api/cron/daily`. With Workflows configured, that starts a **Render Workflows** run: `dailyAlerts` fans out one `checkUser` task per user (batches of 10, each on its own compute, retried twice on failure). At most one start per hour. Without Workflows configured, the app runs the same code itself | `workflows/main.ts`, `src/lib/workflows.ts`, `src/lib/cron.ts`, `src/app/api/cron/daily` |
 | **Usage** | Daily caps per provider, Groq rate-limit gate, timeouts | `src/lib/usage.ts`, `src/lib/ai.ts` |
 
 **Rendering.** Pages use Cache Components: the static shell renders instantly, and anything that reads your session or data streams in behind `<Suspense>`. The AI never runs in the browser, and no API key reaches the client.
@@ -364,7 +364,7 @@ Drizzle ORM on **Postgres** (`DATABASE_URL`), both locally and on Render. If `DA
 | Coupons | **Kernel** cloud browser (Playwright) for web search and coupon pages |
 | Background jobs | **Render Workflows** (`@renderinc/sdk`): the daily alerts job fans out one task per user, with retries |
 | Messaging | **Twilio** WhatsApp sandbox (per-user verified numbers); Gmail SMTP for sign-in codes |
-| Hosting | **Render**: web service, Postgres, Workflows and a cron job |
+| Hosting | **Render**: the live demo runs on a free web service with Neon Postgres and a GitHub Actions schedule. The full Blueprint adds Render Postgres, Workflows and a cron job |
 
 ---
 
@@ -407,10 +407,22 @@ npm run db:push              # in a second terminal, once: creates the tables
 | `npm run tunnel` | Public HTTPS tunnel to localhost:3000 |
 | `npm run lint` / `typecheck` | Lint and type-check |
 
-**Deploy to Render:** [`render.yaml`](render.yaml) is a Blueprint that creates everything in one go. Render Dashboard → New → Blueprint → this repo, then paste each prompted secret from your `.env.local`.
+**Deploy to Render.** There are two Blueprints. Render Dashboard → New → Blueprint → this repo → choose the Blueprint path, then paste each prompted secret from your `.env.local`.
 
-| Resource | What it is |
-|---|---|
+| | Free: [`render.yaml`](render.yaml) (the live demo) | Full: [`render.paid.yaml`](render.paid.yaml) |
+|---|---|---|
+| Card at Render | Not needed | Needed (paid instances) |
+| App | `lifecart` on a free instance. It sleeps after ~15 min idle and takes about a minute to wake | `lifecart` on Starter, always on |
+| Database | [Neon](https://neon.tech) free Postgres: paste its pooled connection string into `DATABASE_URL` | `lifecart-db`, Render Postgres 18 |
+| Schema | `npm run db:push` during each build | `npm run db:push` as the pre-deploy step |
+| Daily alerts | [GitHub Actions](.github/workflows/daily-alerts.yml) calls `POST /api/cron/daily` at 15:00 UTC; the app runs the job itself | Render cron job → **Render Workflows** run (`lifecart-workflows`): one `checkUser` task per user, with retries |
+
+Both: Node 24 (`.node-version`), `npm run start`, and the public URL comes from Render's `RENDER_EXTERNAL_URL`, so `APP_URL` can stay unset. `APPROVAL_SECRET` is generated by Render.
+
+- **Free setup, daily alerts:** in GitHub → Settings → Secrets and variables → Actions, add `LIFECART_URL` (the app's URL) and `LIFECART_CRON_SECRET` (the `APPROVAL_SECRET` value from the Render service's Environment tab). The job only reports counts, so its public log contains no user data.
+- **Full setup:** `RENDER_WORKFLOW_SLUG` is filled in from the workflow service. Add `RENDER_API_KEY` (Account Settings → API Keys) to start the daily job as a workflow run; without it the app runs the same job itself.
+
+---|---|
 | `lifecart-db` | Postgres 18. The schema is applied by `npm run db:push` before every deploy |
 | `lifecart` | The Next.js app (Node 24, `npm ci && npm run build`, `npm run start`). Its public URL comes from Render's `RENDER_EXTERNAL_URL`, so `APP_URL` can stay unset |
 | `lifecart-workflows` | The Render Workflows task server (`npm run workflows`). It copies its keys from the web service |
